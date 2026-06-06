@@ -200,10 +200,51 @@ class SniffQuery:
             f"WHERE m.esm_llr<=-5 AND b.{q}>=0.05 ORDER BY b.{q} DESC LIMIT 20", []).fetchall()
         bd = self.bdim.get(bc, {})
         return {'breed': bc, 'n_dogs': bd.get('n_dogs'), 'breed_group': bd.get('breed_group'),
+                'geometry': {'mean_heterozygosity': bd.get('mean_heterozygosity'),
+                             'isolation_index': bd.get('isolation_index'),
+                             'bottleneck_rank': bd.get('bottleneck_rank'),
+                             'dist_from_global_centroid': bd.get('dist_from_global_centroid'),
+                             'genetic_age_rank_proxy': bd.get('breed_age_proxy_rank'),
+                             'nearest_wild_canid': bd.get('breed_age_proxy_nearest_wild'),
+                             'lifespan_residual_years': bd.get('lifespan_residual_years'),
+                             'nearest_breeds': bd.get('nearest_5_breeds')},
                 'top_damaging_common_variants': [{'variant_id': v, 'af': round(af, 4), 'gene': g,
                                                   'consequence': c, 'esm2_llr': e} for v, af, g, c, e in top],
                 'note': 'Descriptive (damaging = ESM2<=-5 & breed AF>=5%); not a health ranking. Disease layer v1.1.',
                 'provenance': self._prov()}
+
+    # ---- geometry (PCA-256 co-embedding) -------------------------------------
+    def _centroids(self):
+        if getattr(self, '_cent', None) is None:
+            names = [b for b, d in self.bdim.items() if d.get('centroid_pca256')]
+            M = np.array([self.bdim[b]['centroid_pca256'][:10] for b in names])  # top-10 PC metric
+            self._cent = (names, M)
+        return self._cent
+
+    def nearest_breeds(self, breed, k=5):
+        bc = breed.lower()
+        if bc not in self.bdim: return {'error': 'BREED_NOT_IN_ATLAS', 'breed': breed}
+        # prefer the corrected precomputed neighbors (clean; excludes village/wild noise)
+        pre = self.bdim[bc].get('nearest_5_breeds') or []
+        if pre:
+            nearest = [{'breed': x['breed'], 'distance': round(float(x.get('dist', 0)), 3)} for x in pre[:k]]
+            note = 'precomputed top-5 (corrected top-10-PC metric)' + ('; >5 requested, returning 5' if k > 5 else '')
+            return {'breed': bc, 'metric': 'corrected top-10-PC Euclidean (genetic distance)',
+                    'nearest': nearest, 'note': note, 'provenance': self._prov()}
+        names, M = self._centroids()  # fallback for breeds lacking precomputed neighbors
+        if bc not in names: return {'error': 'NO_GEOMETRY', 'breed': bc}
+        i = names.index(bc); d = np.sqrt(((M - M[i]) ** 2).sum(1)); order = np.argsort(d)
+        nearest = [{'breed': names[j], 'distance': round(float(d[j]), 3)} for j in order if j != i][:k]
+        return {'breed': bc, 'metric': 'top-10-PC centroid Euclidean (fallback)', 'nearest': nearest,
+                'provenance': self._prov()}
+
+    def breed_similarity(self, breed_a, breed_b):
+        a, b = breed_a.lower(), breed_b.lower()
+        names, M = self._centroids()
+        if a not in names or b not in names: return {'error': 'BREED_NOT_IN_ATLAS'}
+        d = float(np.sqrt(((M[names.index(a)] - M[names.index(b)]) ** 2).sum()))
+        return {'breed_a': a, 'breed_b': b, 'genetic_distance': round(d, 3),
+                'metric': 'top-10-PC Euclidean', 'provenance': self._prov()}
 
     def disease_links(self, disease=None):
         if not self.kg['nodes']:

@@ -73,6 +73,17 @@ def variant_search(esm_max: float = None, phylop_min: float = None, popmax_min: 
     return Q.variant_search(esm_max, phylop_min, popmax_min, gene_in, consequence or None, impact or None, limit)
 
 @mcp.tool
+def nearest_breeds(breed: str, k: int = 10) -> dict:
+    """Genetically nearest breeds to the given breed (top-10-PC Euclidean in canine genetic space).
+    Answers 'what breeds are most genetically similar to X?' via the PCA-256 breed co-embedding."""
+    return Q.nearest_breeds(breed, k)
+
+@mcp.tool
+def breed_similarity(breed_a: str, breed_b: str) -> dict:
+    """Genetic distance between two breeds (top-10-PC Euclidean). Lower = more genetically similar."""
+    return Q.breed_similarity(breed_a, breed_b)
+
+@mcp.tool
 def disease_links(disease: str = "") -> dict:
     """Disease -> genes/variants/breeds. NOTE: the v1 public release is OMIA-free; the disease/clinical
     layer ships in v1.1. For now use gene/variant/breed RPCs."""
