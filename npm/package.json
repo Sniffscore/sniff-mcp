@@ -1,11 +1,15 @@
 {
   "name": "sniff-mcp",
-  "version": "0.0.1",
-  "description": "Sniff MCP — agent-callable canine genomics over the Sniff Atlas (breed-stratified variant frequencies + calibrated AI pathogenicity + knowledge graph). Name-reservation placeholder; full server coming soon.",
+  "version": "0.1.0",
+  "description": "Agent-callable canine genomics — open MCP server + REST API over the Sniff Atlas: breed-stratified allele frequencies for 9.67M variants across 188 dog breeds, calibrated AI pathogenicity, and a variant/gene/breed/disease knowledge graph. Zero-setup: npx sniff-mcp.",
   "bin": { "sniff-mcp": "index.js" },
-  "keywords": ["mcp","model-context-protocol","canine","dog","genomics","variant","allele-frequency","pathogenicity","sniff","gnomad"],
+  "files": ["index.js", "README.md"],
+  "dependencies": { "mcp-remote": "^0.1.0" },
+  "engines": { "node": ">=18" },
+  "keywords": ["mcp","model-context-protocol","mcp-server","canine","dog","dogs","genomics","genetics","variant","allele-frequency","breed","pathogenicity","veterinary","bioinformatics","sniff","gnomad","ai"],
   "homepage": "https://sniff.world",
   "repository": { "type": "git", "url": "git+https://github.com/Sniffscore/sniff-mcp.git" },
+  "bugs": { "url": "https://github.com/Sniffscore/sniff-mcp/issues" },
   "license": "MIT",
   "author": "Matt Gehring <matt@sniff.world>"
 }

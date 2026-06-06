@@ -1,8 +1,10 @@
-def main():
-    print("Sniff MCP (sniff-mcp) v0.0.1 — name-reservation placeholder.")
-    print("Agent-callable canine genomics over the Sniff Atlas.")
-    print("Dataset (live): https://doi.org/10.5281/zenodo.20566358  (CC-BY-4.0)")
-    print("Full Streamable-HTTP MCP server coming soon — https://sniff.world")
+"""Console entry point: `sniff-mcp`, `python -m sniff_mcp`, or `uvx sniff-mcp`.
+
+Runs the Streamable-HTTP MCP server (needs the release data on disk / via R2 —
+see ARCHITECTURE.md). The hosted endpoint at https://mcp.sniff.world/mcp/ is the
+zero-setup path; self-hosting is for air-gapped or high-volume use.
+"""
+from .server import main
 
 if __name__ == "__main__":
     main()

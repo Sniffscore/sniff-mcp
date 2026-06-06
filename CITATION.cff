@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: "If you use the Sniff Atlas or sniff-mcp, please cite the dataset DOI."
+title: "Sniff Atlas / sniff-mcp — agent-callable canine genomics"
+abstract: >-
+  Open MCP server and REST API over the Sniff Atlas: breed-stratified allele
+  frequencies for 9,667,790 variants across 188 dog breeds (CanFam4), calibrated
+  ESM2 pathogenicity, Pangolin splice, Zoonomia phyloP, and a variant/gene/breed/
+  disease knowledge graph. Computational predictions (UNPROVEN), not clinical.
+type: software
+authors:
+  - family-names: Gehring
+    given-names: Matt
+    orcid: "https://orcid.org/0009-0001-9531-2861"
+    affiliation: "Candor Systems LLC"
+repository-code: "https://github.com/Sniffscore/sniff-mcp"
+url: "https://sniff.world"
+license: MIT
+version: "0.1.0"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.20566358
+    description: "Sniff Atlas dataset (concept DOI, CC-BY-4.0)"
+preferred-citation:
+  type: dataset
+  title: "Sniff Atlas"
+  authors:
+    - family-names: Gehring
+      given-names: Matt
+      orcid: "https://orcid.org/0009-0001-9531-2861"
+  year: 2026
+  publisher:
+    name: Zenodo
+  doi: 10.5281/zenodo.20566358
