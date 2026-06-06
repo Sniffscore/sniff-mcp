@@ -15,7 +15,7 @@ authors:
 repository-code: "https://github.com/Sniffscore/sniff-mcp"
 url: "https://sniff.world"
 license: MIT
-version: "0.1.1"
+version: "0.1.2"
 identifiers:
   - type: doi
     value: 10.5281/zenodo.20566358
