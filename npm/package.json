@@ -1,6 +1,6 @@
 {
   "name": "sniff-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent-callable canine genomics — open MCP server + REST API over the Sniff Atlas: breed-stratified allele frequencies for 9.67M variants across 188 dog breeds, calibrated AI pathogenicity, and a variant/gene/breed/disease knowledge graph. Zero-setup: npx sniff-mcp.",
   "bin": { "sniff-mcp": "index.js" },
   "files": ["index.js", "README.md"],
