@@ -24,6 +24,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '22', registry-url: 'https://registry.npmjs.org' }
-      - run: npm install -g npm@latest      # OIDC trusted publishing needs npm >= 11.5.1
+      - run: npm install -g npm@latest      # recent npm for --provenance
       - working-directory: npm
-        run: npm publish --provenance --access public   # --provenance requires a PUBLIC repo
+        run: npm publish --provenance --access public   # token auth + OIDC provenance (public repo)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
