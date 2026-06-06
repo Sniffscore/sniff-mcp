@@ -7,6 +7,7 @@ export SNIFF_BREEDAF="${SNIFF_BREEDAF:-$SNIFF_DATA/breed_af.parquet}"
 if [ ! -f "$SNIFF_STORE" ]; then
   [ -f "$SNIFF_MASTER" ] || python -m sniff_mcp.fetch_release   # pull from R2 if not mounted
   python -m sniff_mcp.build_store
+  python -m sniff_mcp.build_embeddings || echo "WARN: semantic index build skipped"
 fi
 case "${SNIFF_ROLE:-mcp}" in
   rest) exec uvicorn sniff_mcp.rest:app --host 0.0.0.0 --port "${PORT:-8080}" ;;

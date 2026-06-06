@@ -15,6 +15,8 @@ MASTER  = os.environ.get('SNIFF_MASTER', '/home/ubuntu/canvas-zenodo/canvas_vari
 BREEDAF = os.environ.get('SNIFF_BREEDAF','/home/ubuntu/canvas-zenodo/canvas_breed_af.parquet')
 KGDIR   = os.environ.get('SNIFF_KGDIR',  '/home/ubuntu/sniff-atlas-v1.0.1/knowledge_graph')
 BREEDDIM= os.environ.get('SNIFF_BREEDDIM','/home/ubuntu/sniff-research/mamba-experiments/dimensions/breed_dimensions.json')
+EMB     = os.environ.get('SNIFF_EMB',     '/home/ubuntu/sniff-mcp/semantic_index.npz')
+EMB_MODEL = 'BAAI/bge-small-en-v1.5'
 CONCEPT_DOI = '10.5281/zenodo.20566358'
 
 
@@ -245,6 +247,34 @@ class SniffQuery:
         d = float(np.sqrt(((M[names.index(a)] - M[names.index(b)]) ** 2).sum()))
         return {'breed_a': a, 'breed_b': b, 'genetic_distance': round(d, 3),
                 'metric': 'top-10-PC Euclidean', 'provenance': self._prov()}
+
+    # ---- semantic search (v1.1; fastembed + tiny brute-force index) ----------
+    @property
+    def _emb(self):
+        if getattr(self, '_emb_cache', None) is None:
+            d = np.load(EMB, allow_pickle=True)
+            self._emb_cache = {k: d[k] for k in ('vecs', 'ids', 'types', 'blurbs', 'urls')}
+        return self._emb_cache
+
+    @property
+    def _emodel(self):
+        if getattr(self, '_emodel_cache', None) is None:
+            from fastembed import TextEmbedding
+            self._emodel_cache = TextEmbedding(EMB_MODEL)
+        return self._emodel_cache
+
+    def semantic_search(self, query, top_k=8, entity_type=None):
+        qv = np.asarray(list(self._emodel.embed([query]))[0], dtype=np.float32)
+        qv /= (np.linalg.norm(qv) + 1e-9)
+        E = self._emb; sims = E['vecs'] @ qv
+        out = []
+        for j in np.argsort(sims)[::-1]:
+            if entity_type and str(E['types'][j]) != entity_type: continue
+            out.append({'id': str(E['ids'][j]), 'type': str(E['types'][j]), 'score': round(float(sims[j]), 3),
+                        'summary': str(E['blurbs'][j]), 'url': str(E['urls'][j])})
+            if len(out) >= top_k: break
+        return {'query': query, 'results': out, 'provenance': self._prov(),
+                'note': 'v1.1 semantic search; corpus = 215 breeds (gene/disease entities expand as their text is added).'}
 
     def disease_links(self, disease=None):
         if not self.kg['nodes']:

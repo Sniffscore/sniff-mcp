@@ -8,3 +8,4 @@ build/
 *.vcf.gz*
 .ipynb_checkpoints/
 node_modules/
+*.npz

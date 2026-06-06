@@ -84,6 +84,14 @@ def breed_similarity(breed_a: str, breed_b: str) -> dict:
     return Q.breed_similarity(breed_a, breed_b)
 
 @mcp.tool
+def semantic_search(query: str, top_k: int = 8) -> dict:
+    """Natural-language / conceptual search over atlas entities (v1.1; currently breeds). Use for fuzzy
+    intent like 'ancient arctic sled breeds', 'small companion lapdogs', or 'genetically diverse breeds'
+    when you don't have an exact name. Returns ranked entities with summaries + links. (Gene/disease
+    entities expand as their text corpus is added.)"""
+    return Q.semantic_search(query, top_k)
+
+@mcp.tool
 def disease_links(disease: str = "") -> dict:
     """Disease -> genes/variants/breeds. NOTE: the v1 public release is OMIA-free; the disease/clinical
     layer ships in v1.1. For now use gene/variant/breed RPCs."""

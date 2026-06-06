@@ -45,6 +45,9 @@ def nearest_breeds(breed: str, k: int = 10): return Q.nearest_breeds(breed, k)
 @app.get("/v1/breed-similarity")
 def breed_similarity(breed_a: str, breed_b: str): return Q.breed_similarity(breed_a, breed_b)
 
+@app.get("/v1/semantic")
+def semantic_search(q: str, top_k: int = 8): return Q.semantic_search(q, top_k)
+
 @app.get("/v1/genes")
 def genes(limit: int = 50): return Q.genes_indexed(limit)
 
