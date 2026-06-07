@@ -17,6 +17,14 @@ KGDIR   = os.environ.get('SNIFF_KGDIR',  '/home/ubuntu/sniff-atlas-v1.0.1/knowle
 BREEDDIM= os.environ.get('SNIFF_BREEDDIM','/home/ubuntu/sniff-research/mamba-experiments/dimensions/breed_dimensions.json')
 EMB     = os.environ.get('SNIFF_EMB',     '/home/ubuntu/sniff-mcp/semantic_index.npz')
 EMB_MODEL = 'BAAI/bge-small-en-v1.5'
+# Azure AI Search knowledge index — preferred semantic_search backend (falls back to local brute-force)
+SEARCH_ENDPOINT = os.environ.get('SNIFF_SEARCH_ENDPOINT')      # https://sniff-search.search.windows.net
+SEARCH_KEY = os.environ.get('SNIFF_SEARCH_KEY')               # read-only query key
+SEARCH_INDEX = os.environ.get('SNIFF_SEARCH_INDEX', 'sniff-kb')
+SEARCH_API = '2024-07-01'
+AOAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT')
+AOAI_KEY = os.environ.get('AZURE_OPENAI_KEY')
+AOAI_EMBED = os.environ.get('SNIFF_EMBED_DEPLOY', 'embed')
 CONCEPT_DOI = '10.5281/zenodo.20566358'
 
 
@@ -313,7 +321,34 @@ class SniffQuery:
             self._emodel_cache = TextEmbedding(EMB_MODEL)
         return self._emodel_cache
 
+    def _aisearch(self, query, top_k, entity_type=None):
+        """Hybrid (vector+keyword) retrieval over the Azure AI Search knowledge index."""
+        import urllib.request, json as _json
+        eu = AOAI_ENDPOINT.rstrip('/') + f'/openai/deployments/{AOAI_EMBED}/embeddings?api-version=2024-10-21'
+        er = urllib.request.Request(eu, data=_json.dumps({'input': [query]}).encode(),
+                                    headers={'Content-Type': 'application/json', 'api-key': AOAI_KEY})
+        qv = _json.loads(urllib.request.urlopen(er, timeout=20).read())['data'][0]['embedding']
+        body = {'search': query, 'top': top_k, 'select': 'id,type,title,content,url',
+                'vectorQueries': [{'kind': 'vector', 'vector': qv, 'fields': 'vector', 'k': top_k}]}
+        if entity_type:
+            body['filter'] = f"type eq '{entity_type}'"
+        su = f"{SEARCH_ENDPOINT}/indexes/{SEARCH_INDEX}/docs/search?api-version={SEARCH_API}"
+        sr = urllib.request.Request(su, data=_json.dumps(body).encode(),
+                                    headers={'Content-Type': 'application/json', 'api-key': SEARCH_KEY})
+        hits = _json.loads(urllib.request.urlopen(sr, timeout=20).read())['value']
+        results = [{'id': h.get('id'), 'type': h.get('type'), 'title': h.get('title'),
+                    'snippet': (h.get('content') or '')[:300], 'score': round(float(h.get('@search.score', 0)), 3),
+                    'url': h.get('url')} for h in hits]
+        return {'query': query, 'results': results, 'provenance': self._prov(),
+                'note': 'hybrid (vector+keyword) retrieval over the Sniff knowledge base (diseases, breeds, discoveries).'}
+
     def semantic_search(self, query, top_k=8, entity_type=None):
+        # Preferred: Azure AI Search hybrid retrieval over the whole knowledge base.
+        if SEARCH_ENDPOINT and SEARCH_KEY and AOAI_ENDPOINT and AOAI_KEY:
+            try:
+                return self._aisearch(query, top_k, entity_type)
+            except Exception:
+                pass  # fall back to the local brute-force index
         qv = np.asarray(list(self._emodel.embed([query]))[0], dtype=np.float32)
         qv /= (np.linalg.norm(qv) + 1e-9)
         E = self._emb; sims = E['vecs'] @ qv
@@ -324,7 +359,7 @@ class SniffQuery:
                         'summary': str(E['blurbs'][j]), 'url': str(E['urls'][j])})
             if len(out) >= top_k: break
         return {'query': query, 'results': out, 'provenance': self._prov(),
-                'note': 'v1.1 semantic search; corpus = 215 breeds (gene/disease entities expand as their text is added).'}
+                'note': 'fallback local semantic search (215 breed blurbs); Azure AI Search index not configured.'}
 
     def disease_links(self, disease=None):
         if not self.kg['nodes']:
