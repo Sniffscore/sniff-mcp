@@ -148,9 +148,12 @@ def nearest_breeds(breed: str, k: int = 10): return Q.nearest_breeds(breed, k)
 @app.get("/v1/breed-similarity", tags=["breeds"], summary="Genetic distance between two breeds")
 def breed_similarity(breed_a: str, breed_b: str): return Q.breed_similarity(breed_a, breed_b)
 
-@app.get("/v1/semantic", tags=["discovery"], summary="Natural-language search over atlas entities")
-def semantic_search(q: str = Query(..., description='e.g. "ancient arctic sled dogs"'), top_k: int = 8):
-    return Q.semantic_search(q, top_k)
+@app.get("/v1/semantic", tags=["discovery"],
+         summary="Faceted hybrid + semantic search over the knowledge base (diseases, breeds, discoveries)")
+def semantic_search(q: str = Query(..., description='natural-language query, e.g. "drug sensitivity in herding dogs"'),
+                    top_k: int = 8, entity_type: Optional[str] = None,
+                    filters: Optional[str] = Query(None, description="OData facet filter, e.g. \"breed_group eq 'herding' and cohort_n ge 30\". Facets: type, breed, breed_group, gene, evidence_tier, confidence_tier, diversity_tier, cohort_n.")):
+    return Q.semantic_search(q, top_k, entity_type, filters)
 
 @app.get("/v1/genes", tags=["genes"], summary="Top genes by variant count")
 def genes(limit: int = 50): return Q.genes_indexed(limit)

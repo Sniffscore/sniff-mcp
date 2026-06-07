@@ -88,12 +88,14 @@ def breed_similarity(breed_a: str, breed_b: str) -> dict:
     return Q.breed_similarity(breed_a, breed_b)
 
 @mcp.tool
-def semantic_search(query: str, top_k: int = 8) -> dict:
-    """Natural-language / conceptual search over atlas entities (v1.1; currently breeds). Use for fuzzy
-    intent like 'ancient arctic sled breeds', 'small companion lapdogs', or 'genetically diverse breeds'
-    when you don't have an exact name. Returns ranked entities with summaries + links. (Gene/disease
-    entities expand as their text corpus is added.)"""
-    return Q.semantic_search(query, top_k)
+def semantic_search(query: str, top_k: int = 8, entity_type: str = "", filters: str = "") -> dict:
+    """Faceted hybrid + semantic-ranker search over the whole knowledge base (diseases, breeds, Scout
+    discoveries). Use for fuzzy/thematic intent ('drug sensitivity in herding dogs', 'breeds prone to eye
+    disease', 'genetically diverse breeds'). entity_type filters to 'disease'|'breed'|'discovery'. filters
+    is an OData facet expression for cross-dimension queries, e.g. "breed_group eq 'herding' and cohort_n ge 30"
+    or "diversity_tier eq 'severe_bottleneck'" (facets: type, breed, breed_group, gene, evidence_tier,
+    confidence_tier, diversity_tier, cohort_n). Returns ranked entities with snippets, dimension fields, links."""
+    return Q.semantic_search(query, top_k, entity_type or None, filters or None)
 
 @mcp.tool
 def disease_links(disease: str = "") -> dict:

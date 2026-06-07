@@ -321,32 +321,43 @@ class SniffQuery:
             self._emodel_cache = TextEmbedding(EMB_MODEL)
         return self._emodel_cache
 
-    def _aisearch(self, query, top_k, entity_type=None):
-        """Hybrid (vector+keyword) retrieval over the Azure AI Search knowledge index."""
+    def _aisearch(self, query, top_k, entity_type=None, filters=None):
+        """Hybrid (vector+keyword) + semantic-ranker retrieval over the Azure AI Search index.
+        filters: optional OData filter for faceted cross-dimension queries
+        (e.g. "breed_group eq 'herding' and cohort_n ge 30")."""
         import urllib.request, json as _json
         eu = AOAI_ENDPOINT.rstrip('/') + f'/openai/deployments/{AOAI_EMBED}/embeddings?api-version=2024-10-21'
         er = urllib.request.Request(eu, data=_json.dumps({'input': [query]}).encode(),
                                     headers={'Content-Type': 'application/json', 'api-key': AOAI_KEY})
         qv = _json.loads(urllib.request.urlopen(er, timeout=20).read())['data'][0]['embedding']
-        body = {'search': query, 'top': top_k, 'select': 'id,type,title,content,url',
+        body = {'search': query, 'top': top_k, 'select': 'id,type,title,content,url,breed,gene,evidence_tier,cohort_n,confidence_tier',
+                'queryType': 'semantic', 'semanticConfiguration': 'sem',
                 'vectorQueries': [{'kind': 'vector', 'vector': qv, 'fields': 'vector', 'k': top_k}]}
+        clauses = []
         if entity_type:
-            body['filter'] = f"type eq '{entity_type}'"
+            clauses.append(f"type eq '{entity_type}'")
+        if filters:
+            clauses.append(f"({filters})")
+        if clauses:
+            body['filter'] = ' and '.join(clauses)
         su = f"{SEARCH_ENDPOINT}/indexes/{SEARCH_INDEX}/docs/search?api-version={SEARCH_API}"
         sr = urllib.request.Request(su, data=_json.dumps(body).encode(),
                                     headers={'Content-Type': 'application/json', 'api-key': SEARCH_KEY})
         hits = _json.loads(urllib.request.urlopen(sr, timeout=20).read())['value']
         results = [{'id': h.get('id'), 'type': h.get('type'), 'title': h.get('title'),
-                    'snippet': (h.get('content') or '')[:300], 'score': round(float(h.get('@search.score', 0)), 3),
-                    'url': h.get('url')} for h in hits]
+                    'snippet': (h.get('content') or '')[:300],
+                    'score': round(float(h.get('@search.rerankerScore', h.get('@search.score', 0))), 3),
+                    'breed': h.get('breed') or None, 'gene': h.get('gene') or None,
+                    'evidence_tier': h.get('evidence_tier') or None, 'cohort_n': h.get('cohort_n') or None,
+                    'confidence': h.get('confidence_tier') or None, 'url': h.get('url')} for h in hits]
         return {'query': query, 'results': results, 'provenance': self._prov(),
-                'note': 'hybrid (vector+keyword) retrieval over the Sniff knowledge base (diseases, breeds, discoveries).'}
+                'note': 'faceted hybrid + semantic-ranker retrieval over the Sniff knowledge base (diseases, breeds, discoveries). Pass filters= for cross-dimension queries.'}
 
-    def semantic_search(self, query, top_k=8, entity_type=None):
-        # Preferred: Azure AI Search hybrid retrieval over the whole knowledge base.
+    def semantic_search(self, query, top_k=8, entity_type=None, filters=None):
+        # Preferred: Azure AI Search faceted + semantic retrieval over the whole knowledge base.
         if SEARCH_ENDPOINT and SEARCH_KEY and AOAI_ENDPOINT and AOAI_KEY:
             try:
-                return self._aisearch(query, top_k, entity_type)
+                return self._aisearch(query, top_k, entity_type, filters)
             except Exception:
                 pass  # fall back to the local brute-force index
         qv = np.asarray(list(self._emodel.embed([query]))[0], dtype=np.float32)
