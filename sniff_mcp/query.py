@@ -8,7 +8,7 @@ predicted_disease_relevance=UNPROVEN on pathogenicity output.
 
 Data paths are dev defaults; at deploy they are pulled to local NVMe (R2 = distribution).
 """
-import sqlite3, numpy as np, re, json, os
+import sqlite3, numpy as np, re, json, os, math
 
 STORE   = os.environ.get('SNIFF_STORE',  '/home/ubuntu/sniff-mcp/point_store.sqlite')
 MASTER  = os.environ.get('SNIFF_MASTER', '/home/ubuntu/canvas-zenodo/canvas_variant_master.parquet')
@@ -74,14 +74,49 @@ class SniffQuery:
         parts = p.split(':')
         return f'{parts[0]}:{parts[1]}'
 
-    def _prov(self, dr2=False, grade='Predicted'):
-        return {'data_release': self.release, 'dataset_doi': CONCEPT_DOI, 'assembly': self.assembly,
-                'evidence_grade': grade, 'confounding_risk': 'LOW', 'imputation_dr2_flag': bool(dr2),
-                'predicted_disease_relevance': 'UNPROVEN',
-                'field_sources': {'af': 'breed_af', 'esm': 'esm2 (AUC 0.935 vs OMIA, n=115)'},
-                'citation': f'Gehring M. (2026) Sniff Atlas. Zenodo. https://doi.org/{CONCEPT_DOI}. CC-BY-4.0',
-                'scope_note': 'MAF>=1% (incl ~3M variants at 1-5%); imputed; predictions computational, not clinical.'
-                + (' chr27/chr32 low-DR2 region.' if dr2 else '')}
+    def _prov(self, dr2=False, grade='Predicted', breed=None):
+        p = {'data_release': self.release, 'dataset_doi': CONCEPT_DOI, 'assembly': self.assembly,
+             'evidence_grade': grade, 'confounding_risk': 'LOW', 'imputation_dr2_flag': bool(dr2),
+             'predicted_disease_relevance': 'UNPROVEN',
+             'field_sources': {'af': 'breed_af', 'esm': 'esm2 (AUC 0.935 vs OMIA, n=115)'},
+             'citation': f'Gehring M. (2026) Sniff Atlas. Zenodo. https://doi.org/{CONCEPT_DOI}. CC-BY-4.0',
+             'scope_note': 'MAF>=1% (incl ~3M variants at 1-5%); imputed; predictions computational, not clinical.'
+             + (' chr27/chr32 low-DR2 region.' if dr2 else '')}
+        if breed is not None:  # breed-stratified responses carry their sample-size confidence
+            n = self._bn(breed)
+            p['breed_n_called'] = n
+            p['breed_confidence'] = self._grade(n)
+            p['confidence_note'] = ('breed allele frequencies carry sample-size uncertainty; small-n estimates '
+                                    'are low-confidence (see af_ci95). Atlas median ~22 dogs/breed.')
+        return p
+
+    # ---- sample-size confidence (project-wide invariant) ---------------------
+    def _bn(self, breed):
+        d = self.bdim.get((breed or '').lower()) or {}
+        n = d.get('n_dogs')
+        return int(n) if n else None
+
+    @staticmethod
+    def _grade(n):
+        if not n: return 'unknown'
+        return 'high' if n >= 50 else 'moderate' if n >= 20 else 'low' if n >= 10 else 'very_low'
+
+    @staticmethod
+    def _wilson(p, n_alleles, z=1.96):
+        """95% Wilson score CI for an allele frequency p observed over n_alleles."""
+        N = n_alleles
+        if not N or N <= 0: return None
+        d = 1 + z * z / N
+        c = (p + z * z / (2 * N)) / d
+        h = (z / d) * math.sqrt(max(p * (1 - p) / N + z * z / (4 * N * N), 0.0))
+        return [round(max(0.0, c - h), 4), round(min(1.0, c + h), 4)]
+
+    def _conf(self, breed, af=None):
+        n = self._bn(breed)
+        out = {'n_dogs': n, 'confidence': self._grade(n)}
+        if af is not None and n:
+            out['af_ci95'] = self._wilson(af, 2 * n)
+        return out
 
     def _row(self, key):
         r = self.con.execute('SELECT * FROM variants WHERE variant_id=?', (key,)).fetchone()
@@ -114,8 +149,10 @@ class SniffQuery:
         row = self._row(self._norm(position))
         if not row:
             return {'error': 'VARIANT_NOT_FOUND', 'note': 'not in resource (or below MAF>=1% floor)'}
+        pmn = self._bn(row['popmax_breed'])
         return {'variant_id': row['variant_id'], 'ref': row['ref'], 'alt': row['alt'], 'global_af': row['alt_af'],
                 'popmax_af': row['popmax_af'], 'popmax_breed': row['popmax_breed'],
+                'popmax_breed_n_dogs': pmn, 'popmax_confidence': self._grade(pmn),
                 'consequence': row['consequence'], 'impact': row['impact'], 'gene': row['gene_name'],
                 'gene_id': row['gene_id'], 'esm2_llr': row['esm_llr'], 'pangolin': row['pangolin'],
                 'phylop_241way': row['phylop'], 'deleteriousness_tier': row['del_tier'],
@@ -127,12 +164,17 @@ class SniffQuery:
             return {'error': 'VARIANT_NOT_FOUND', 'note': 'not in resource (or below MAF>=1% floor)'}
         vec = np.frombuffer(row['breed_vec'], dtype=np.float16).astype(float)
         order = np.argsort(vec)[::-1]
-        cross = ([{'breed': self.breeds[i], 'af': round(float(vec[i]), 4)} for i in range(len(vec))]
+        def _cb(i):
+            b = self.breeds[i]; n = self._bn(b)
+            return {'breed': b, 'af': round(float(vec[i]), 4), 'n_dogs': n, 'confidence': self._grade(n)}
+        cross = ([_cb(i) for i in range(len(vec))]
                  if cross_breed_full else
-                 [{'breed': self.breeds[i], 'af': round(float(vec[i]), 4)} for i in order[:top_n] if vec[i] > 0])
+                 [_cb(i) for i in order[:top_n] if vec[i] > 0])
         dz = self.kg['var_to_disease'].get(f"CANFAM4:{row['variant_id']}", [])
+        pmn = self._bn(row['popmax_breed'])
         out = {'variant': {'id': row['variant_id'], 'ref': row['ref'], 'alt': row['alt'], 'global_af': row['alt_af'],
                            'popmax_af': row['popmax_af'], 'popmax_breed': row['popmax_breed'],
+                           'popmax_breed_n_dogs': pmn, 'popmax_confidence': self._grade(pmn),
                            'n_breeds_observed': row['n_breeds_observed'], 'imputation_dr2_flag': bool(row['low_dr2'])},
                'pathogenicity': {'esm2_llr': row['esm_llr'], 'esm2_calibration_auc': 0.935,
                                  'pangolin_max': row['pangolin'], 'phylop_241way': row['phylop'],
@@ -149,7 +191,11 @@ class SniffQuery:
             bc = breed_context.lower()
             if bc in self.breed_set:
                 af = float(vec[self.breeds.index(bc)]); rank = int((vec > af).sum()) + 1
-                out['in_breed'] = {'breed': bc, 'af': round(af, 4), 'rank_among_breeds': rank}
+                conf = self._conf(bc, af)
+                out['in_breed'] = {'breed': bc, 'af': round(af, 4), 'rank_among_breeds': rank,
+                                   'n_dogs': conf['n_dogs'], 'af_ci95': conf.get('af_ci95'),
+                                   'confidence': conf['confidence']}
+                out['provenance'] = self._prov(row['low_dr2'], breed=bc)
             else:
                 out['in_breed'] = {'error': 'BREED_NOT_IN_ATLAS', 'breed': breed_context}
         return out
@@ -164,8 +210,11 @@ class SniffQuery:
                 return {'error': 'VARIANT_NOT_FOUND'}
             vec = np.frombuffer(row['breed_vec'], dtype=np.float16).astype(float)
             af = float(vec[self.breeds.index(bc)])
+            conf = self._conf(bc, af)
             return {'breed': bc, 'variant_id': row['variant_id'], 'af': round(af, 4),
-                    'rank_among_breeds': int((vec > af).sum()) + 1, 'provenance': self._prov(row['low_dr2'])}
+                    'rank_among_breeds': int((vec > af).sum()) + 1,
+                    'n_dogs': conf['n_dogs'], 'af_ci95': conf.get('af_ci95'), 'confidence': conf['confidence'],
+                    'provenance': self._prov(row['low_dr2'], breed=bc)}
         if gene:
             q = '"' + bc + '"'
             rows = self.duck.execute(
@@ -174,7 +223,7 @@ class SniffQuery:
                 f"WHERE m.gene_name=? AND b.{q}>0 ORDER BY b.{q} DESC LIMIT 50", [gene]).fetchall()
             return {'breed': bc, 'gene': gene,
                     'variants': [{'variant_id': v, 'af': round(af, 4), 'consequence': c, 'impact': im, 'esm2_llr': e}
-                                 for v, af, c, im, e in rows], 'provenance': self._prov()}
+                                 for v, af, c, im, e in rows], 'provenance': self._prov(breed=bc)}
         return {'error': 'NEED_VARIANT_OR_GENE'}
 
     def gene_summary(self, gene_symbol, af_min=0.0, limit=25):
@@ -201,7 +250,8 @@ class SniffQuery:
             f"FROM read_parquet('{BREEDAF}') b JOIN m USING(variant_id) "
             f"WHERE m.esm_llr<=-5 AND b.{q}>=0.05 ORDER BY b.{q} DESC LIMIT 20", []).fetchall()
         bd = self.bdim.get(bc, {})
-        return {'breed': bc, 'n_dogs': bd.get('n_dogs'), 'breed_group': bd.get('breed_group'),
+        return {'breed': bc, 'n_dogs': bd.get('n_dogs'), 'confidence': self._grade(bd.get('n_dogs')),
+                'breed_group': bd.get('breed_group'),
                 'geometry': {'mean_heterozygosity': bd.get('mean_heterozygosity'),
                              'isolation_index': bd.get('isolation_index'),
                              'bottleneck_rank': bd.get('bottleneck_rank'),
@@ -213,7 +263,7 @@ class SniffQuery:
                 'top_damaging_common_variants': [{'variant_id': v, 'af': round(af, 4), 'gene': g,
                                                   'consequence': c, 'esm2_llr': e} for v, af, g, c, e in top],
                 'note': 'Descriptive (damaging = ESM2<=-5 & breed AF>=5%); not a health ranking. Disease layer v1.1.',
-                'provenance': self._prov()}
+                'provenance': self._prov(breed=bc)}
 
     # ---- geometry (PCA-256 co-embedding) -------------------------------------
     def _centroids(self):
