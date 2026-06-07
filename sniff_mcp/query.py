@@ -26,6 +26,9 @@ AOAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT')
 AOAI_KEY = os.environ.get('AZURE_OPENAI_KEY')
 AOAI_EMBED = os.environ.get('SNIFF_EMBED_DEPLOY', 'embed')
 CONCEPT_DOI = '10.5281/zenodo.20566358'
+# Per-dog intelligence substrate (product name TBD; "companion" is a placeholder)
+COMPANION_CTX = os.environ.get('SNIFF_COMPANION_CTX', '/home/ubuntu/sniff-research/coordination/companion/companion_breed_context.json')
+DOGDIM = os.environ.get('SNIFF_DOGDIM', '/home/ubuntu/atlas-static/projection/dog_dimensions.json')
 
 
 class SniffQuery:
@@ -272,6 +275,74 @@ class SniffQuery:
                                                   'consequence': c, 'esm2_llr': e} for v, af, g, c, e in top],
                 'note': 'Descriptive (damaging = ESM2<=-5 & breed AF>=5%); not a health ranking. Disease layer v1.1.',
                 'provenance': self._prov(breed=bc)}
+
+    # ---- companion (placeholder name) — per-dog intelligence substrate -------
+    @property
+    def companion(self):
+        if getattr(self, '_companion', None) is None:
+            try:
+                self._companion = json.load(open(COMPANION_CTX))['breeds']
+            except Exception:
+                self._companion = {}
+        return self._companion
+
+    def companion_genome_context(self, breed):
+        bc = breed.lower()
+        c = self.companion.get(bc)
+        if not c:
+            return {'error': 'BREED_NOT_IN_ATLAS', 'breed': breed}
+        return {'breed': bc, 'carrier_profile': c['carrier_profile'],
+                'pleiotropy_notes': c['pleiotropy_notes'], 'diversity_context': c['diversity_context'],
+                'every_line': 'observation/question, never diagnosis; carrier != affected; worth asking your vet',
+                'provenance': self._prov(grade='Moderate', breed=bc)}
+
+    def companion_monitoring_plan(self, breed):
+        bc = breed.lower()
+        c = self.companion.get(bc)
+        if not c:
+            return {'error': 'BREED_NOT_IN_ATLAS', 'breed': breed}
+        return {'breed': bc, 'watch_items': c['monitoring_plan'],
+                'note': 'genome-triggered watch-loops; empowerment + worth asking your vet, never alarm/diagnosis',
+                'provenance': self._prov(grade='Moderate', breed=bc)}
+
+    def companion_verify_claim(self, claim, breed):
+        import re
+        bc = (breed or '').lower()
+        c = self.companion.get(bc) or {'carrier_profile': []}
+        allowed = {str(p['carrier_pct']) for p in c['carrier_profile']}
+        # standalone numbers/percentages only — exclude digits inside gene symbols (FGF4, SLC2A9, ABCB1)
+        nums = re.findall(r'(?<![A-Za-z0-9])\d+(?:\.\d+)?(?![A-Za-z0-9])', claim or '')
+        unsourced = [n for n in nums if n.split('.')[0] not in allowed and n not in allowed]
+        fear = [w for w in ("will die", "fatal", "doomed", "never give", "guaranteed", "do not give")
+                if w in (claim or '').lower()]
+        ok = not unsourced and not fear
+        tier = 'supported' if (ok and nums) else 'suggestive' if ok else 'UNPROVEN'
+        return {'ok': ok, 'tier': tier,
+                'rephrase': None if ok else 'Re-state as an observation/question with a sourced number + "worth asking your vet."',
+                'caveat': 'Donner carrier frequencies are from tested (DTC) dogs; carrier != affected.',
+                'citation': [CONCEPT_DOI],
+                'reason_if_blocked': ('unsourced number(s): ' + ','.join(unsourced)) if unsourced
+                                     else ('fear/directive language: ' + ','.join(fear)) if fear else None,
+                'note': 'substrate-grounded gate; evidence-engine associations get the full Scout harness + promotion ladder'}
+
+    def _dogdim_lookup(self, dog_id):
+        if getattr(self, '_dogdim', None) is None:
+            try:
+                self._dogdim = ({d['dog_id']: d for d in json.load(open(DOGDIM))['dogs']}
+                                if os.path.exists(DOGDIM) else {})
+            except Exception:
+                self._dogdim = {}
+        return self._dogdim.get(dog_id)
+
+    def companion_cohort(self, dog_id):
+        dd = self._dogdim_lookup(dog_id)
+        if dd is None:
+            return {'dog_id': dog_id, 'status': 'DOG_PLACEMENT_REQUIRED',
+                    'note': 'per-dog cohort needs the dog placed (upload/projection); Founder dog_ids resolve where dog_dimensions is loaded.',
+                    'provenance': self._prov()}
+        breed = dd.get('breed'); bd = self.bdim.get(breed, {})
+        return {'dog_id': dog_id, 'breed': breed, 'nearest_dogs': dd.get('nearest_5_dogs'),
+                'nearest_breeds': bd.get('nearest_5_breeds'), 'provenance': self._prov(breed=breed)}
 
     # ---- geometry (PCA-256 co-embedding) -------------------------------------
     def _centroids(self):

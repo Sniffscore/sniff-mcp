@@ -166,3 +166,20 @@ def variant_search(esm_max: Optional[float] = None, phylop_min: Optional[float] 
 
 @app.get("/v1/disease/{disease}", tags=["diseases"], summary="Disease → genes/variants/breeds")
 def disease_links(disease: str): return Q.disease_links(disease)
+
+# --- companion (placeholder name) — per-dog intelligence substrate ---
+@app.get("/v1/companion/genome-context/{breed}", tags=["companion"],
+         summary="Per-breed genome context (carrier profile + pleiotropy + diversity); Vet-Report substrate")
+def companion_genome_context(breed: str): return Q.companion_genome_context(breed)
+
+@app.get("/v1/companion/monitoring-plan/{breed}", tags=["companion"],
+         summary="Genome-triggered proactive monitoring watch-loops")
+def companion_monitoring_plan(breed: str): return Q.companion_monitoring_plan(breed)
+
+@app.post("/v1/companion/verify-claim", tags=["companion"],
+          summary="Pre-assertion rigor gate for a health claim (returns tier + safe rephrase, or blocks)")
+def companion_verify_claim(body: dict): return Q.companion_verify_claim(body.get('claim', ''), body.get('breed', ''))
+
+@app.get("/v1/companion/cohort/{dog_id}", tags=["companion"],
+         summary="Genome cohort for a dog (nearest dogs + breeds)")
+def companion_cohort(dog_id: str): return Q.companion_cohort(dog_id)
