@@ -148,6 +148,10 @@ def nearest_breeds(breed: str, k: int = 10): return Q.nearest_breeds(breed, k)
 @app.get("/v1/breed-similarity", tags=["breeds"], summary="Genetic distance between two breeds")
 def breed_similarity(breed_a: str, breed_b: str): return Q.breed_similarity(breed_a, breed_b)
 
+@app.get("/v1/breed/{breed}/similar", tags=["breeds"],
+         summary="Breeds similar in OUTCOME space (profile) or GENOME space — the gap is informative")
+def breed_similar(breed: str, space: str = "outcome", k: int = 5): return Q.breed_similar(breed, space, k)
+
 @app.get("/v1/semantic", tags=["discovery"],
          summary="Faceted hybrid + semantic search over the knowledge base (diseases, breeds, discoveries)")
 def semantic_search(q: str = Query(..., description='natural-language query, e.g. "drug sensitivity in herding dogs"'),

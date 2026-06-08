@@ -29,6 +29,8 @@ CONCEPT_DOI = '10.5281/zenodo.20566358'
 # Per-dog intelligence substrate (product name TBD; "companion" is a placeholder)
 COMPANION_CTX = os.environ.get('SNIFF_COMPANION_CTX', '/home/ubuntu/sniff-research/coordination/companion/companion_breed_context.json')
 DOGDIM = os.environ.get('SNIFF_DOGDIM', '/home/ubuntu/atlas-static/projection/dog_dimensions.json')
+# outcome/dimension-space neighbors (combinatorial-query layer)
+BREED_NEIGHBORS = os.environ.get('SNIFF_BREED_NEIGHBORS', '/home/ubuntu/sniff-research/mamba-experiments/dimensions/breed_outcome_neighbors.json')
 
 
 class SniffQuery:
@@ -343,6 +345,29 @@ class SniffQuery:
         breed = dd.get('breed'); bd = self.bdim.get(breed, {})
         return {'dog_id': dog_id, 'breed': breed, 'nearest_dogs': dd.get('nearest_5_dogs'),
                 'nearest_breeds': bd.get('nearest_5_breeds'), 'provenance': self._prov(breed=breed)}
+
+    # ---- outcome-space similarity (the combinatorial-query layer) ------------
+    @property
+    def breed_nbr(self):
+        if getattr(self, '_nbr', None) is None:
+            try:
+                self._nbr = json.load(open(BREED_NEIGHBORS))['breeds']
+            except Exception:
+                self._nbr = {}
+        return self._nbr
+
+    def breed_similar(self, breed, space='outcome', k=5):
+        bc = breed.lower()
+        n = self.breed_nbr.get(bc)
+        if not n:
+            return {'error': 'BREED_NOT_IN_INDEX', 'breed': breed,
+                    'note': 'outcome index covers real breeds with n_dogs>=20'}
+        space = 'genome' if space == 'genome' else 'outcome'
+        key = 'genome_nearest' if space == 'genome' else 'outcome_nearest'
+        return {'breed': bc, 'space': space, 'similar': n.get(key, [])[:k],
+                'also': 'space=genome (similar genetics) | outcome (similar PROFILE: diversity/load/longevity/size/disease/traits)',
+                'note': 'the GAP between genome-similar and outcome-similar is itself informative.',
+                'provenance': self._prov(breed=bc)}
 
     # ---- geometry (PCA-256 co-embedding) -------------------------------------
     def _centroids(self):
