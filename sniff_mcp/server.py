@@ -5,9 +5,11 @@ Exposes the Sniff Atlas query layer as MCP tools. Structured-call-only.
 Run:  python -m sniff_mcp.server   (or `uvx sniff-mcp serve`)
 Transport: streamable-http on 0.0.0.0:$PORT (default 8080), behind Cloudflare in prod.
 """
-import os
+import os, json, urllib.request, urllib.error
 from fastmcp import FastMCP
 from .query import SniffQuery
+
+BRAIN_URL = os.environ.get("SNIFF_BRAIN_URL", "https://brain.sniff.world")
 
 INSTRUCTIONS = (
     "Sniff MCP — agent-callable canine genomics over the Sniff Atlas (open, CC-BY-4.0). "
@@ -16,7 +18,11 @@ INSTRUCTIONS = (
     "(AUC 0.935 vs OMIA), Pangolin splice, and Zoonomia phyloP conservation.\n\n"
     "IDENTIFIERS: positions are CanFam4 'chrom:pos' (e.g. '5:56189113' or 'CANFAM4:5:56189113' or 'chr5:56189113'). "
     "Assembly defaults to canfam4.\n"
-    "START with `ask_variant_context` for a single variant — it returns frequency + pathogenicity + gene + "
+    "START: for a natural-language question ('what is X', 'does breed Y get Z', 'human equivalent of W'), "
+    "call `ask` — it returns a GROUNDED, CITED answer (or an honest abstain) over the fused knowledge layer "
+    "(OMIA inherited diseases + dog<->human homolog bridge, AVCG variant pathogenicity grades, carrier risk, "
+    "longevity, temperament, diversity). For the documented-disease atoms of a breed or disease, call "
+    "`disease_bridge`. For a single variant, `ask_variant_context` returns frequency + pathogenicity + gene + "
     "cross-breed + provenance in one call. Use `variant_search` for filtered discovery, `gene_summary`/"
     "`breed_summary` for rollups, `metadata`/`breeds_in_atlas` for discovery.\n\n"
     "SAMPLE-SIZE CONFIDENCE: breed-level responses carry n_dogs, an af_ci95 (Wilson interval), and a "
@@ -26,12 +32,63 @@ INSTRUCTIONS = (
     "RIGOR CONTRACT: every response carries a provenance block (data DOI, evidence grade, citation). "
     "Pathogenicity outputs ALWAYS include predicted_disease_relevance='UNPROVEN' — these are computational "
     "predictions, NOT clinical diagnoses, and the resource is common-variant only (MAF>=1%). The OMIA disease "
-    "layer ships in v1.1. Always surface the citation and the UNPROVEN caveat to the user."
+    "layer + grounded `ask` are LIVE (cite-or-abstain; carrier != affected; educational, not diagnostic). "
+    "Always surface the citation and the UNPROVEN caveat to the user."
 )
 
 mcp = FastMCP(name="Sniff", instructions=INSTRUCTIONS)
 Q = SniffQuery()
 _ = Q.kg  # pre-warm the in-RAM knowledge graph at startup so queries are always fast
+
+def _brain(path: str, payload: dict = None, timeout: int = 45) -> dict:
+    """Thin client to the Sniff brain (grounded reasoning seam). GET if no payload, else POST JSON."""
+    url = f"{BRAIN_URL}{path}"
+    data = json.dumps(payload).encode() if payload is not None else None
+    headers = {"User-Agent": "sniff-mcp"}   # Cloudflare 403s the default urllib UA
+    if data: headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(url, data=data, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.load(r)
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as e:
+        return {"error": f"brain unavailable: {e}", "answer": None}
+
+@mcp.tool
+def ask(question: str) -> dict:
+    """Ask Sniff a natural-language canine-genetics question and get a GROUNDED, CITED answer (or an honest
+    abstain). Covers inherited diseases (OMIA) and their human homologs (the dog<->human disease bridge),
+    breed disease/carrier risk, variant pathogenicity grades (AVCG; Boeykens et al. 2024, curated in OMIA),
+    longevity/life-expectancy (McMillan 2024), temperament (Darwin's Ark/Morrill 2022, with breed-explains-X%
+    caveats), and genetic diversity. The engine answers ONLY from cited Sniff atoms and returns
+    `abstained: true` if it lacks grounded data — it never guesses. Educational, not diagnostic
+    (carrier != affected; advise a vet). Returns {answer, citations:[atom_ids], abstained}. USE THIS for any
+    'what is X / does breed Y get Z / human equivalent of W' question; use the variant/breed/gene tools for
+    structured lookups by identifier."""
+    r = _brain("/v1/ask", {"question": question})
+    if r.get("answer") is None:
+        return {"error": r.get("error", "brain unavailable"), "answer": None, "abstained": None, "citations": []}
+    return {"answer": r["answer"], "citations": r.get("citations", []), "abstained": r.get("abstained"),
+            "provenance": {"engine": "sniff-brain (grounded RAG)", "contract": "cite-or-abstain",
+                           "sources": "OMIA, AVCG/Boeykens 2024, Donner 2023, McMillan 2024, Morrill 2022",
+                           "note": "educational, not diagnostic; carrier is not affected"}}
+
+@mcp.tool
+def disease_bridge(disease: str = "", breed: str = "") -> dict:
+    """The fused OMIA disease layer as cited atoms. Give a `disease` (name or 'OMIA:001870-9615') for its
+    genes, inheritance, human homolog (OMIM/Mondo bridge), and variant pathogenicity grade (AVCG, ACMG/AMP
+    5-tier, curated in OMIA) when graded. Or give a `breed` (e.g. 'doberman_pinscher') for the inherited
+    conditions documented in that breed with carrier frequency + confidence tier + grade. Every atom carries
+    its source + atom_id. Educational, not diagnostic."""
+    if breed:
+        r = _brain(f"/v1/atoms?entity=breed:{urllib.request.quote(breed)}&claim=HEALTH_CARRIER")
+    elif disease:
+        eid = disease if disease.upper().startswith("OMIA:") else disease
+        r = _brain(f"/v1/atoms?entity=disease:{urllib.request.quote(eid)}")
+    else:
+        return {"error": "provide a disease (name or OMIA id) or a breed"}
+    return r if "error" in r else {"atoms": r.get("atoms", []), "count": len(r.get("atoms", [])),
+                                   "provenance": {"source": "OMIA + AVCG (Boeykens 2024) + Donner 2023",
+                                                  "note": "documented in OMIA; educational, not diagnostic"}}
 
 @mcp.tool
 def ask_variant_context(position: str, breed_context: str = "", top_n: int = 5,
