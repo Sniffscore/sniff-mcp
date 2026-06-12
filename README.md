@@ -10,7 +10,7 @@
 
 > Building anything with dogs, breeds, or canine health? This is the data layer. No key, no signup — point your agent or app at it and go.
 
-- 🔌 **MCP endpoint:** `https://mcp.sniff.world/mcp/` (Streamable HTTP, 13 tools)
+- 🔌 **MCP endpoint:** `https://mcp.sniff.world/mcp/` (Streamable HTTP, 15 tools) — including **`ask`**, a grounded canine-genetics Q&A that answers **only from cited data or honestly abstains** (no hallucinated dog-health advice), and **`disease_bridge`** (inherited-disease atoms with ACMG-style pathogenicity grades + the dog⇄human homolog)
 - 🌐 **REST API:** `https://api.sniff.world/` ([OpenAPI docs](https://api.sniff.world/docs) · [`llms.txt`](https://api.sniff.world/llms.txt))
 - 📚 **Dataset:** [10.5281/zenodo.20566358](https://doi.org/10.5281/zenodo.20566358) (CC-BY-4.0)
 

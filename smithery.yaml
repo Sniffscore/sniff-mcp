@@ -1,0 +1,12 @@
+# Smithery config for sniff-mcp — https://smithery.ai/docs
+# Sniff is a hosted, open MCP server (no auth). The recommended use is the hosted endpoint
+# (https://mcp.sniff.world/mcp/, Streamable HTTP). This config lets Smithery run the published
+# package locally over stdio, which bridges to the same open data layer.
+startCommand:
+  type: stdio
+  # no configuration required — the server is open and needs no API key
+  configSchema:
+    type: object
+    properties: {}
+  commandFunction: |-
+    (config) => ({ command: 'npx', args: ['-y', 'sniff-mcp'] })
