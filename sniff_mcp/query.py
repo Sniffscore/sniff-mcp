@@ -40,7 +40,8 @@ class SniffQuery:
         self.con.execute('PRAGMA mmap_size=8000000000')
         meta = dict(self.con.execute('SELECT k,v FROM meta').fetchall())
         self.breeds = meta['breed_order'].split('\t'); self.breed_set = set(self.breeds)
-        self.release = meta['release']; self.assembly = meta['assembly']; self.n_variants = int(meta['n_variants'])
+        self.release = os.environ.get('SNIFF_RELEASE') or meta['release']   # env override avoids rewriting the live store
+        self.assembly = meta['assembly']; self.n_variants = int(meta['n_variants'])
         self._duck = None; self._kg = None; self._bdim = None; self._omia = None
 
     # ---- lazy backends -------------------------------------------------------
