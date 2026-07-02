@@ -41,7 +41,7 @@ class SniffQuery:
         meta = dict(self.con.execute('SELECT k,v FROM meta').fetchall())
         self.breeds = meta['breed_order'].split('\t'); self.breed_set = set(self.breeds)
         self.release = meta['release']; self.assembly = meta['assembly']; self.n_variants = int(meta['n_variants'])
-        self._duck = None; self._kg = None; self._bdim = None
+        self._duck = None; self._kg = None; self._bdim = None; self._omia = None
 
     # ---- lazy backends -------------------------------------------------------
     @property
@@ -66,6 +66,18 @@ class SniffQuery:
         if self._kg is None:
             self._kg = self._load_kg()
         return self._kg
+
+    @property
+    def omia(self):
+        """The OMIA clinical disease layer (lazy). None if the governed JSON aren't present on this
+        instance (degrades gracefully — disease tools then report the layer unavailable rather than crash)."""
+        if self._omia is None:
+            try:
+                from .disease import OmiaDiseaseLayer
+                self._omia = OmiaDiseaseLayer()
+            except Exception:
+                self._omia = False   # sentinel: attempted + unavailable (don't retry every call)
+        return self._omia or None
 
     def _load_kg(self):
         import pyarrow.parquet as pq
@@ -144,10 +156,11 @@ class SniffQuery:
                 'scope_banner': ('Sniff Atlas: 9,667,790 common (MAF>=1%, incl ~3M at 1-5%) canine coding '
                                  'variants x 188 breeds (CanFam4). Calibrated ESM2 pathogenicity (AUC 0.935 vs '
                                  'OMIA), Pangolin, phyloP. Predictions are computational; disease relevance '
-                                 'UNPROVEN. OMIA clinical layer ships v1.1.'),
-                'rpcs': ['ask_variant_context', 'variant_lookup', 'breed_variant_frequency', 'gene_summary',
-                         'breed_summary', 'disease_links', 'variant_search', 'breeds_in_atlas', 'genes_indexed',
-                         'metadata']}
+                                 'UNPROVEN. OMIA clinical disease layer is LIVE (inheritance, curated prose, '
+                                 'clinical signs, human OMIM/Mondo homolog, evidence base; OMIA CC-BY, dog-only).'),
+                'rpcs': ['ask', 'ask_variant_context', 'variant_lookup', 'breed_variant_frequency', 'gene_summary',
+                         'breed_summary', 'disease_bridge', 'disease_links', 'disease_lookup', 'search_diseases',
+                         'variant_search', 'breeds_in_atlas', 'genes_indexed', 'metadata']}
 
     def breeds_in_atlas(self):
         return {'n_breeds': len(self.breeds), 'breeds': self.breeds}
@@ -195,7 +208,8 @@ class SniffQuery:
                'gene': {'symbol': row['gene_name'], 'id': row['gene_id'], 'consequence': row['consequence'],
                         'impact': row['impact']},
                'diseases': ([{'id': d, 'name': self.kg['nodes'].get(d, {}).get('name')} for d in dz] if dz
-                            else {'note': 'No disease layer in v1 (OMIA clinical integration ships v1.1).'}),
+                            else (self.omia.for_gene(row['gene_name']) if self.omia and row['gene_name'] else [])
+                            or {'note': 'no OMIA disease documented for this gene (dog); try disease_lookup / search_diseases'}),
                'cross_breed': cross,
                'provenance': self._prov(row['low_dr2']),
                'deep_links': {'gene_page': f"https://sniff.world/gene/{(row['gene_name'] or '').lower()}/",
@@ -469,10 +483,49 @@ class SniffQuery:
                 'note': 'fallback local semantic search (215 breed blurbs); Azure AI Search index not configured.'}
 
     def disease_links(self, disease=None):
-        if not self.kg['nodes']:
-            return {'note': 'No disease layer in the v1 public release (OMIA clinical integration ships v1.1).',
+        """Disease -> its OMIA clinical record (inheritance, curated prose, clinical signs, human OMIM/Mondo
+        homolog, evidence base) + molecular links. Clinical half from the governed OMIA layer (CC-BY, dog-only);
+        molecular half (disease->variants/breeds) from the atlas KG when present (OMIA-free in the v1 public KG)."""
+        if not disease:
+            return {'error': 'provide a disease name or OMIA id (e.g. "degenerative myelopathy" or "OMIA:000263-9615")'}
+        omia = self.omia
+        if omia is None:
+            return {'note': 'OMIA clinical layer not available on this instance.',
                     'available_now': 'variant->gene + breed carrier frequencies via the other RPCs.'}
-        return {'note': 'Disease layer ships v1.1.'}
+        clin = omia.clinical(disease)
+        if not clin.get('found'):
+            return {'found': False, 'query': disease, 'note': 'no OMIA clinical record matched (dog-only)',
+                    'candidates': clin.get('candidates', [])}
+        # molecular half from the atlas KG (edges land with the OMIA-linked KG; roadmap)
+        molecular = None
+        if self.kg['nodes']:
+            vs = [v for v, ds in self.kg['var_to_disease'].items() if clin['omia_id'] in ds]
+            if vs:
+                molecular = {'variants': vs}
+        clin['molecular_links'] = molecular or {
+            'note': 'disease->variant/breed links land with the OMIA-linked KG; for now use gene_summary / '
+                    'breed_variant_frequency on the causal gene(s).'}
+        return clin
+
+    def disease_lookup(self, query=None):
+        """Direct OMIA clinical lookup by disease name or OMIA id (the clinical record). Dog-only."""
+        if not query:
+            return {'error': 'provide a disease name or OMIA id'}
+        omia = self.omia
+        if omia is None:
+            return {'note': 'OMIA clinical layer not available on this instance.'}
+        return omia.clinical(query)
+
+    def search_diseases(self, query=None, limit=10):
+        """Ranked candidate diseases by free-text (name -> OMIA id + canonical URL + score). Dog-only."""
+        if not query:
+            return {'error': 'provide a search string', 'results': []}
+        omia = self.omia
+        if omia is None:
+            return {'note': 'OMIA clinical layer not available on this instance.', 'results': []}
+        r = omia.search(query, min(max(int(limit), 1), 25))
+        return {'count': len(r), 'results': r,
+                'source': 'OMIA — Nicholas, Tammen & Sydney Informatics Hub (doi:10.25910/2AMR-PV70, CC-BY-4.0)'}
 
     def variant_search(self, esm_max=None, phylop_min=None, popmax_min=None, gene_in=None,
                        consequence=None, impact=None, limit=50):

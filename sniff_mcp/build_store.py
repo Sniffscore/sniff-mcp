@@ -5,7 +5,7 @@ import pyarrow.parquet as pq, numpy as np, sqlite3, os, time
 MASTER=os.environ.get('SNIFF_MASTER','/data/variant_master.parquet')
 BREED =os.environ.get('SNIFF_BREEDAF','/data/breed_af.parquet')
 OUT   =os.environ.get('SNIFF_STORE','/data/point_store.sqlite')
-RELEASE=os.environ.get('SNIFF_RELEASE','sniff-atlas-v1.0.1')
+RELEASE=os.environ.get('SNIFF_RELEASE','sniff-atlas-v1.1.0')
 def main():
     t0=time.time()
     breed_cols=[c for c in pq.read_schema(BREED).names if c!='variant_id']

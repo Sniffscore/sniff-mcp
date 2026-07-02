@@ -37,7 +37,7 @@ app = FastAPI(
     title="Sniff API",
     summary="Agent-callable canine genomics over the open Sniff Atlas.",
     description=DESCRIPTION,
-    version="0.1.0",
+    version="1.1.0",
     contact={"name": "Sniff", "url": "https://sniff.world", "email": "matt@sniff.world"},
     license_info={"name": "Data CC-BY-4.0 / Code MIT", "url": "https://creativecommons.org/licenses/by/4.0/"},
     servers=[{"url": "https://api.sniff.world", "description": "Production"}],
@@ -168,8 +168,16 @@ def variant_search(esm_max: Optional[float] = None, phylop_min: Optional[float] 
                    consequence: Optional[str] = None, impact: Optional[str] = None, limit: int = 50):
     return Q.variant_search(esm_max, phylop_min, popmax_min, gene_in, consequence, impact, limit)
 
-@app.get("/v1/disease/{disease}", tags=["diseases"], summary="Disease → genes/variants/breeds")
+@app.get("/v1/diseases/search", tags=["diseases"], summary="Search the canine disease catalogue (ranked candidates)")
+def search_diseases(q: str = Query(..., description='disease free-text, e.g. "degenerative myelopathy"'), limit: int = 10):
+    return Q.search_diseases(q, limit)
+
+@app.get("/v1/disease/{disease}", tags=["diseases"],
+         summary="Disease → OMIA clinical record (inheritance, prose, signs, human OMIM/Mondo, evidence) + molecular links")
 def disease_links(disease: str): return Q.disease_links(disease)
+
+@app.get("/v1/disease/{disease}/lookup", tags=["diseases"], summary="Disease → OMIA clinical record (direct lookup)")
+def disease_lookup(disease: str): return Q.disease_lookup(disease)
 
 # --- companion (placeholder name) — per-dog intelligence substrate ---
 @app.get("/v1/companion/genome-context/{breed}", tags=["companion"],

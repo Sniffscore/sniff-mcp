@@ -156,9 +156,27 @@ def semantic_search(query: str, top_k: int = 8, entity_type: str = "", filters: 
 
 @mcp.tool
 def disease_links(disease: str = "") -> dict:
-    """Disease -> genes/variants/breeds. NOTE: the v1 public release is OMIA-free; the disease/clinical
-    layer ships in v1.1. For now use gene/variant/breed RPCs."""
+    """A canine inherited disease (name or OMIA id) -> its governed OMIA clinical record: mode of inheritance,
+    causal gene(s), curated description (summary / clinical features / molecular genetics / pathology /
+    prevalence), clinical signs as HP/MP phenotype terms (-> Monarch), the human OMIM analog + Mondo id, and
+    the evidence base (peer-reviewed reference count + landmark study) -- plus molecular links (variants/breeds)
+    when the KG carries them. Sourced to OMIA (CC-BY); returns a canonical sniff.world URL. Dog-only.
+    Educational, not diagnostic. For fuzzy candidates use search_diseases."""
     return Q.disease_links(disease or None)
+
+@mcp.tool
+def disease_lookup(query: str) -> dict:
+    """Look up a canine inherited disease by name or OMIA id -> its governed OMIA clinical record (inheritance,
+    causal gene(s), curated description, clinical signs, human OMIM analog + Mondo id, evidence base). Sourced
+    to OMIA (CC-BY); returns a canonical sniff.world URL. Dog-only. For candidate disambiguation use
+    search_diseases; for a disease's molecular links use disease_links."""
+    return Q.disease_lookup(query or None)
+
+@mcp.tool
+def search_diseases(query: str, limit: int = 10) -> dict:
+    """Search the canine disease catalogue by free text -> ranked candidates [{omia_id, disease, url, score}].
+    Use before disease_lookup when the exact name is unknown. Dog-only."""
+    return Q.search_diseases(query or None, limit)
 
 @mcp.tool
 def breeds_in_atlas() -> dict:
