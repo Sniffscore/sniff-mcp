@@ -69,34 +69,50 @@ def root():
     }
 
 
-LLMS_TXT = """# Sniff Atlas — canine genomics for agents
+# Living manual: the release, tool catalog + count, and scope banner are rendered from Q.metadata()
+# at request time, so llms.txt CANNOT drift from the live surface (metadata is the single source of truth).
+LLMS_TXT_TEMPLATE = """# Sniff Atlas — canine genomics for agents
 
 > Open API + MCP server for dog DNA: breed-stratified allele frequencies for 9,667,790
-> variants across 188 dog breeds (CanFam4), calibrated AI pathogenicity, and a
-> variant/gene/breed/disease knowledge graph. No API key. Every response is self-citing.
+> variants across 188 dog breeds (CanFam4), calibrated AI pathogenicity, an OMIA clinical disease
+> layer (inheritance, human OMIM/Mondo model-of homolog, AVCG grades), and a grounded cite-or-abstain
+> answer engine. No API key. Every response is self-citing.
+> Data release: {release}
 
 ## Use it
-- REST base: https://api.sniff.world  (OpenAPI: https://api.sniff.world/openapi.json)
-- MCP (Streamable HTTP): https://mcp.sniff.world/mcp/   (registry: world.sniff/sniff-mcp)
+- REST base: https://api.sniff.world  (OpenAPI: https://api.sniff.world/openapi.json — the always-current REST schema)
+- MCP (Streamable HTTP): https://mcp.sniff.world/mcp/   (registry: world.sniff/sniff-mcp; `tools/list` is the live surface)
 - Identifiers: CanFam4 chrom:pos, e.g. 5:56189113
 
+## Tools ({n_tools}) — authoritative catalog, generated from /v1/metadata `rpcs`
+{tool_list}
+
+## Disease / clinical layer (v1.1)
+- disease_lookup / search_diseases / disease_bridge — OMIA clinical records: inheritance, causal gene(s),
+  curated prose, clinical signs (HP/MP -> Monarch), human OMIM + Mondo homolog framed MODEL-OF (never identity —
+  the dog's disease models the human one, it is not "also known as" it), and AVCG variant grades. Dog-only.
+  Cited to OMIA (doi:10.25910/2AMR-PV70, CC-BY).
+- ask — natural-language question -> grounded, cited answer or honest abstain (surfaces the model-of bridge).
+
 ## Key endpoints
-- GET /v1/variant/{pos}/context  — START HERE: frequency + pathogenicity + gene + cross-breed + provenance in one call
-- GET /v1/variant/{pos}          — single variant
-- GET /v1/breed/{breed}          — breed profile (geometry, top variants, nearest breeds)
-- GET /v1/breed/{breed}/nearest  — genetically nearest breeds
-- GET /v1/gene/{symbol}          — variants in a gene, ranked by impact
-- GET /v1/semantic?q=            — natural-language search (e.g. "ancient arctic sled dogs")
-- GET /v1/search                 — filtered discovery across all variants
-- GET /v1/metadata               — release, DOI, counts, scope banner
+- GET /v1/variant/{{pos}}/context  — START HERE: frequency + pathogenicity + gene + cross-breed + provenance in one call
+- GET /v1/variant/{{pos}}          — single variant
+- GET /v1/breed/{{breed}}          — breed profile (geometry, top variants, nearest breeds)
+- GET /v1/gene/{{symbol}}          — variants in a gene, ranked by impact
+- GET /v1/disease/{{name|omia_id}} — OMIA clinical record (inheritance, prose, human homolog, evidence)
+- GET /v1/diseases/search?q=       — ranked disease candidates
+- GET /v1/semantic?q=              — natural-language search (e.g. "ancient arctic sled dogs")
+- GET /v1/search                   — filtered discovery across all variants
+- GET /v1/metadata                 — release, DOI, counts, scope banner, and the tool catalog
 
 ## Example
 curl https://api.sniff.world/v1/variant/5:56189113   ->  CPT2 missense, popmax 0.59 (akita)
 
 ## Rigor (quote this)
-Pathogenicity is computational and flagged predicted_disease_relevance=UNPROVEN — a research
-and discovery resource, NOT a clinical diagnostic. Scope: common + low-frequency variants (MAF>=1%),
-imputed. The provenance block (DOI + scope + caveat) ships in every response.
+{banner}
+Pathogenicity is computational (predicted_disease_relevance=UNPROVEN) — a research/discovery resource, NOT a
+clinical diagnostic. Breed stats carry n_dogs + a Wilson CI + a confidence grade. The provenance block ships
+in every response.
 
 ## Cite
 Gehring, M. (2026). Sniff Atlas. Zenodo. https://doi.org/10.5281/zenodo.20566358 (CC-BY-4.0)
@@ -105,9 +121,11 @@ Site: https://sniff.world
 
 
 @app.get("/llms.txt", tags=["meta"], response_class=PlainTextResponse,
-         summary="Plaintext manual for LLMs/agents")
+         summary="Plaintext manual for LLMs/agents (rendered live from /v1/metadata — cannot drift)")
 def llms_txt():
-    return LLMS_TXT
+    m = Q.metadata()
+    return LLMS_TXT_TEMPLATE.format(release=m["data_release"], n_tools=len(m["rpcs"]),
+                                    tool_list=", ".join(m["rpcs"]), banner=m["scope_banner"])
 
 
 @app.get("/health", tags=["meta"], summary="Liveness + release/counts")

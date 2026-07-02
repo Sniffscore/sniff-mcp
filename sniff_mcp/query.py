@@ -26,6 +26,16 @@ AOAI_ENDPOINT = os.environ.get('AZURE_OPENAI_ENDPOINT')
 AOAI_KEY = os.environ.get('AZURE_OPENAI_KEY')
 AOAI_EMBED = os.environ.get('SNIFF_EMBED_DEPLOY', 'embed')
 CONCEPT_DOI = '10.5281/zenodo.20566358'
+
+# THE single source of truth for the agent-callable tool catalog. metadata() exposes it as `rpcs`;
+# llms.txt renders its list+count from metadata (so the manual can't drift); server.py asserts at
+# startup that the live MCP tool surface == this list (the anti-drift gate). Keep this == the @mcp.tool set.
+TOOL_CATALOG = [
+    'ask', 'ask_variant_context', 'variant_lookup', 'variant_search', 'breed_variant_frequency',
+    'gene_summary', 'genes_indexed', 'breed_summary', 'breeds_in_atlas', 'nearest_breeds',
+    'breed_similarity', 'semantic_search', 'disease_bridge', 'disease_links', 'disease_lookup',
+    'search_diseases', 'metadata',
+]
 # Per-dog intelligence substrate (product name TBD; "companion" is a placeholder)
 COMPANION_CTX = os.environ.get('SNIFF_COMPANION_CTX', '/home/ubuntu/sniff-research/coordination/companion/companion_breed_context.json')
 DOGDIM = os.environ.get('SNIFF_DOGDIM', '/home/ubuntu/atlas-static/projection/dog_dimensions.json')
@@ -159,9 +169,7 @@ class SniffQuery:
                                  'OMIA), Pangolin, phyloP. Predictions are computational; disease relevance '
                                  'UNPROVEN. OMIA clinical disease layer is LIVE (inheritance, curated prose, '
                                  'clinical signs, human OMIM/Mondo homolog, evidence base; OMIA CC-BY, dog-only).'),
-                'rpcs': ['ask', 'ask_variant_context', 'variant_lookup', 'breed_variant_frequency', 'gene_summary',
-                         'breed_summary', 'disease_bridge', 'disease_links', 'disease_lookup', 'search_diseases',
-                         'variant_search', 'breeds_in_atlas', 'genes_indexed', 'metadata']}
+                'rpcs': list(TOOL_CATALOG)}
 
     def breeds_in_atlas(self):
         return {'n_breeds': len(self.breeds), 'breeds': self.breeds}

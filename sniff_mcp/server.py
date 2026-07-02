@@ -194,7 +194,26 @@ def metadata() -> dict:
     return Q.metadata()
 
 
+def _assert_tool_catalog():
+    """Anti-drift gate: the live registered MCP tool surface MUST equal metadata's catalog
+    (query.TOOL_CATALOG, which also drives /v1/metadata rpcs and the generated llms.txt). Adding an
+    @mcp.tool without updating TOOL_CATALOG (or vice-versa) fails startup — verified in isolation before deploy."""
+    import asyncio, sys
+    try:
+        registered = {t.name for t in asyncio.run(mcp.list_tools())}
+    except Exception as e:
+        sys.stderr.write(f"[gate] WARN: could not enumerate MCP tools ({e}); skipping catalog check\n")
+        return
+    catalog = set(Q.metadata()["rpcs"])
+    if registered != catalog:
+        raise RuntimeError(
+            "[gate] MCP tool surface != metadata catalog (query.TOOL_CATALOG). "
+            f"in catalog, not registered: {sorted(catalog - registered)}; "
+            f"registered, not in catalog: {sorted(registered - catalog)}")
+    sys.stderr.write(f"[gate] OK: {len(catalog)} tools; MCP surface == metadata catalog == llms.txt\n")
+
 def main():
+    _assert_tool_catalog()
     port = int(os.environ.get("PORT", "8080"))
     mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
 
