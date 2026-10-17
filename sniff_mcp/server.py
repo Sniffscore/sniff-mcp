@@ -13,16 +13,16 @@ BRAIN_URL = os.environ.get("SNIFF_BRAIN_URL", "https://brain.sniff.world")
 
 INSTRUCTIONS = (
     "Sniff MCP — agent-callable canine genomics over the Sniff Atlas (open, CC-BY-4.0). "
-    "Covers 9,667,790 common (MAF>=1%, incl ~3M at 1-5%) canine coding variants across 188 dog breeds "
-    "on the CanFam4 assembly, with breed-stratified allele frequencies, calibrated ESM2 pathogenicity "
-    "(AUC 0.935 vs OMIA), Pangolin splice, and Zoonomia phyloP conservation.\n\n"
+    "Covers 9,667,790 common (MAF>=1%, incl ~3M at 1-5%) canine variants genome-wide (about 73,000 coding) across 188 dog breeds "
+    "on the CanFam4 assembly, with breed-stratified allele frequencies, "
+    "Pangolin splice predictions (Zeng & Li 2022), and Zoonomia phyloP conservation. Sniff does not score variants with a model of its own.\n\n"
     "IDENTIFIERS: positions are CanFam4 'chrom:pos' (e.g. '5:56189113' or 'CANFAM4:5:56189113' or 'chr5:56189113'). "
     "Assembly defaults to canfam4.\n"
     "START: for a natural-language question ('what is X', 'does breed Y get Z', 'human equivalent of W'), "
     "call `ask` — it returns a GROUNDED, CITED answer (or an honest abstain) over the fused knowledge layer "
     "(OMIA inherited diseases + dog<->human homolog bridge, AVCG variant pathogenicity grades, carrier risk, "
     "longevity, temperament, diversity). For the documented-disease atoms of a breed or disease, call "
-    "`disease_bridge`. For a single variant, `ask_variant_context` returns frequency + pathogenicity + gene + "
+    "`disease_bridge`. For a single variant, `ask_variant_context` returns frequency + annotations + gene + "
     "cross-breed + provenance in one call. Use `variant_search` for filtered discovery, `gene_summary`/"
     "`breed_summary` for rollups, `metadata`/`breeds_in_atlas` for discovery.\n\n"
     "SAMPLE-SIZE CONFIDENCE: breed-level responses carry n_dogs, an af_ci95 (Wilson interval), and a "
@@ -30,7 +30,7 @@ INSTRUCTIONS = (
     "an af of 0 in a 12-dog breed is NOT 'absent' (its CI may reach 0.10+). ALWAYS weight by confidence — "
     "do not report a frequency, a popmax, or a 'breed with the most/least X' claim without its n_dogs/CI.\n"
     "RIGOR CONTRACT: every response carries a provenance block (data DOI, evidence grade, citation). "
-    "Pathogenicity outputs ALWAYS include predicted_disease_relevance='UNPROVEN' — these are computational "
+    "Splice and conservation annotations ALWAYS include predicted_disease_relevance='UNPROVEN' — these are computational "
     "predictions, NOT clinical diagnoses, and the resource is common-variant only (MAF>=1%). The OMIA disease "
     "layer + grounded `ask` are LIVE (cite-or-abstain; carrier != affected; educational, not diagnostic). "
     "Always surface the citation and the UNPROVEN caveat to the user."
@@ -94,7 +94,7 @@ def disease_bridge(disease: str = "", breed: str = "") -> dict:
 def ask_variant_context(position: str, breed_context: str = "", top_n: int = 5,
                         cross_breed_full: bool = False) -> dict:
     """THE headline query. Given a CanFam4 position (e.g. '5:56189113'), return the variant's global +
-    popmax frequency, breed-stratified cross-breed frequencies, ESM2/Pangolin/phyloP pathogenicity, gene
+    popmax frequency, breed-stratified cross-breed frequencies, Pangolin and phyloP annotations, gene
     context, linked diseases (v1.1), provenance, and deep links — in one call. Pass breed_context to also
     get that breed's AF + rank. cross_breed_full=True returns all 188 breeds (default: top_n)."""
     return Q.ask_variant_context(position, breed_context or None, top_n, cross_breed_full)
@@ -102,7 +102,7 @@ def ask_variant_context(position: str, breed_context: str = "", top_n: int = 5,
 @mcp.tool
 def variant_lookup(position: str) -> dict:
     """Single-variant lookup by CanFam4 position: ref/alt, global + popmax AF, consequence, gene,
-    ESM2/Pangolin/phyloP, deleteriousness tier, canonical URL, provenance."""
+    Pangolin and phyloP annotations, canonical URL, provenance."""
     return Q.variant_lookup(position)
 
 @mcp.tool
@@ -113,25 +113,25 @@ def breed_variant_frequency(breed: str, variant: str = "", gene: str = "") -> di
 
 @mcp.tool
 def gene_summary(gene_symbol: str, af_min: float = 0.0, limit: int = 25) -> dict:
-    """Variants in a gene (by gene symbol), ranked by impact then ESM2 damage. Paginated (limit, default 25);
+    """Variants in a gene (by gene symbol), ranked by impact then allele frequency. Paginated (limit, default 25);
     returns total_variants. Use af_min to filter by global AF."""
     return Q.gene_summary(gene_symbol, af_min, limit)
 
 @mcp.tool
 def breed_summary(breed: str) -> dict:
-    """Breed profile: top damaging common variants (ESM2<=-5 & breed AF>=5%), n_dogs, breed group.
+    """Breed profile: n_dogs, breed group, genetic geometry and nearest breeds.
     Descriptive only — not a health ranking."""
     return Q.breed_summary(breed)
 
 @mcp.tool
-def variant_search(esm_max: float = None, phylop_min: float = None, popmax_min: float = None,
+def variant_search(phylop_min: float = None, popmax_min: float = None,
                    gene_in: list[str] = None, consequence: str = "", impact: str = "",
                    limit: int = 50) -> dict:
-    """Filtered discovery over all 9.67M variants. Predicates (combine freely): esm_max (ESM2 LLR <=),
+    """Filtered discovery over all 9.67M variants. Predicates (combine freely):
     phylop_min (phyloP >=), popmax_min (popmax AF >=), gene_in (list of gene symbols), consequence,
     impact (HIGH/MODERATE/LOW/MODIFIER). Returns total_count + a capped list (max 200). Note: popmax may
     be in a wild population (dingo/village) — check popmax_breed."""
-    return Q.variant_search(esm_max, phylop_min, popmax_min, gene_in, consequence or None, impact or None, limit)
+    return Q.variant_search(None, phylop_min, popmax_min, gene_in, consequence or None, impact or None, limit)
 
 @mcp.tool
 def nearest_breeds(breed: str, k: int = 10) -> dict:

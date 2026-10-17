@@ -3,9 +3,10 @@ message: "If you use the Sniff Atlas or sniff-mcp, please cite the dataset DOI."
 title: "Sniff Atlas / sniff-mcp — agent-callable canine genomics"
 abstract: >-
   Open MCP server and REST API over the Sniff Atlas: breed-stratified allele
-  frequencies for 9,667,790 variants across 188 dog breeds (CanFam4), calibrated
-  ESM2 pathogenicity, Pangolin splice, Zoonomia phyloP, and a variant/gene/breed/
-  disease knowledge graph. Computational predictions (UNPROVEN), not clinical.
+  frequencies for 9,667,790 variants genome-wide across 188 dog breeds (CanFam4),
+  with SnpEff annotation, Pangolin splice values, Zoonomia phyloP, and a
+  variant/gene/breed/disease knowledge graph. It assigns no pathogenicity to any
+  variant; disease relevance is UNPROVEN and nothing here is clinical.
 type: software
 authors:
   - family-names: Gehring

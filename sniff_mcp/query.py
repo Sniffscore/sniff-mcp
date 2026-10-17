@@ -114,7 +114,7 @@ class SniffQuery:
         p = {'data_release': self.release, 'dataset_doi': CONCEPT_DOI, 'assembly': self.assembly,
              'evidence_grade': grade, 'confounding_risk': 'LOW', 'imputation_dr2_flag': bool(dr2),
              'predicted_disease_relevance': 'UNPROVEN',
-             'field_sources': {'af': 'breed_af', 'esm': 'esm2 (AUC 0.935 vs OMIA, n=115)'},
+             'field_sources': {'af': 'breed_af', 'pangolin': 'Pangolin (Zeng & Li 2022, Genome Biology); a third-party splice model, shown as its prediction', 'phylop': 'Zoonomia 241-mammal phyloP'},
              'citation': f'Gehring M. (2026) Sniff Atlas. Zenodo. https://doi.org/{CONCEPT_DOI}. CC-BY-4.0',
              'scope_note': 'MAF>=1% (incl ~3M variants at 1-5%); imputed; predictions computational, not clinical.'
              + (' chr27/chr32 low-DR2 region.' if dr2 else '')}
@@ -164,9 +164,9 @@ class SniffQuery:
     def metadata(self):
         return {'name': 'Sniff MCP', 'data_release': self.release, 'dataset_doi': CONCEPT_DOI,
                 'assembly': self.assembly, 'n_variants': self.n_variants, 'n_breeds': len(self.breeds),
-                'scope_banner': ('Sniff Atlas: 9,667,790 common (MAF>=1%, incl ~3M at 1-5%) canine coding '
-                                 'variants x 188 breeds (CanFam4). Calibrated ESM2 pathogenicity (AUC 0.935 vs '
-                                 'OMIA), Pangolin, phyloP. Predictions are computational; disease relevance '
+                'scope_banner': ('Sniff Atlas: 9,667,790 common (MAF>=1%, incl ~3M at 1-5%) canine '
+                                 'variants genome-wide x 188 breeds (CanFam4), about 73,000 of them coding. Splice predictions from '
+                                 'Pangolin (Zeng & Li 2022) and phyloP conservation are research annotations; disease relevance '
                                  'UNPROVEN. OMIA clinical disease layer is LIVE (inheritance, curated prose, '
                                  'clinical signs, human OMIM/Mondo homolog, evidence base; OMIA CC-BY, dog-only).'),
                 'rpcs': list(TOOL_CATALOG)}
@@ -189,8 +189,8 @@ class SniffQuery:
                 'popmax_af': row['popmax_af'], 'popmax_breed': row['popmax_breed'],
                 'popmax_breed_n_dogs': pmn, 'popmax_confidence': self._grade(pmn),
                 'consequence': row['consequence'], 'impact': row['impact'], 'gene': row['gene_name'],
-                'gene_id': row['gene_id'], 'esm2_llr': row['esm_llr'], 'pangolin': row['pangolin'],
-                'phylop_241way': row['phylop'], 'deleteriousness_tier': row['del_tier'],
+                'gene_id': row['gene_id'], 'pangolin': row['pangolin'],
+                'phylop_241way': row['phylop'],
                 'canonical_url': self._vurl(row), 'provenance': self._prov(row['low_dr2'])}
 
     def ask_variant_context(self, position, breed_context=None, top_n=5, cross_breed_full=False):
@@ -211,9 +211,9 @@ class SniffQuery:
                            'popmax_af': row['popmax_af'], 'popmax_breed': row['popmax_breed'],
                            'popmax_breed_n_dogs': pmn, 'popmax_confidence': self._grade(pmn),
                            'n_breeds_observed': row['n_breeds_observed'], 'imputation_dr2_flag': bool(row['low_dr2'])},
-               'pathogenicity': {'esm2_llr': row['esm_llr'], 'esm2_calibration_auc': 0.935,
+               'annotations': {'pangolin_source': 'Pangolin (Zeng & Li 2022, Genome Biology); a third-party splice model, shown as its prediction',
                                  'pangolin_max': row['pangolin'], 'phylop_241way': row['phylop'],
-                                 'deleteriousness_tier': row['del_tier'], 'predicted_disease_relevance': 'UNPROVEN'},
+                                 'predicted_disease_relevance': 'UNPROVEN'},
                'gene': {'symbol': row['gene_name'], 'id': row['gene_id'], 'consequence': row['consequence'],
                         'impact': row['impact']},
                'diseases': ([{'id': d, 'name': self.kg['nodes'].get(d, {}).get('name')} for d in dz] if dz
@@ -254,12 +254,12 @@ class SniffQuery:
         if gene:
             q = '"' + bc + '"'
             rows = self.duck.execute(
-                f"SELECT b.variant_id, b.{q} af, m.consequence, m.impact, m.esm_llr "
+                f"SELECT b.variant_id, b.{q} af, m.consequence, m.impact "
                 f"FROM read_parquet('{BREEDAF}') b JOIN m USING(variant_id) "
                 f"WHERE m.gene_name=? AND b.{q}>0 ORDER BY b.{q} DESC LIMIT 50", [gene]).fetchall()
             return {'breed': bc, 'gene': gene,
-                    'variants': [{'variant_id': v, 'af': round(af, 4), 'consequence': c, 'impact': im, 'esm2_llr': e}
-                                 for v, af, c, im, e in rows], 'provenance': self._prov(breed=bc)}
+                    'variants': [{'variant_id': v, 'af': round(af, 4), 'consequence': c, 'impact': im}
+                                 for v, af, c, im in rows], 'provenance': self._prov(breed=bc)}
         return {'error': 'NEED_VARIANT_OR_GENE'}
 
     def gene_summary(self, gene_symbol, af_min=0.0, limit=25):
@@ -267,13 +267,13 @@ class SniffQuery:
         if total == 0:
             return {'error': 'AMBIGUOUS_GENE', 'note': f'no variants for gene_name={gene_symbol}'}
         rows = self.duck.execute(
-            "SELECT variant_id, alt_af, popmax_af, popmax_breed, consequence, impact, esm_llr, phyloP_241way "
-            "FROM m WHERE gene_name=? AND alt_af>=? ORDER BY (impact='HIGH') DESC, esm_llr ASC NULLS LAST LIMIT ?",
+            "SELECT variant_id, alt_af, popmax_af, popmax_breed, consequence, impact, phyloP_241way "
+            "FROM m WHERE gene_name=? AND alt_af>=? ORDER BY (impact='HIGH') DESC, (impact='MODERATE') DESC, (impact='LOW') DESC, alt_af DESC LIMIT ?",
             [gene_symbol, af_min, limit]).fetchall()
         return {'gene': gene_symbol, 'total_variants': total, 'returned': len(rows),
                 'variants': [{'variant_id': v, 'global_af': af, 'popmax_af': pm, 'popmax_breed': pb,
-                              'consequence': c, 'impact': im, 'esm2_llr': e, 'phylop_241way': php}
-                             for v, af, pm, pb, c, im, e, php in rows],
+                              'consequence': c, 'impact': im, 'phylop_241way': php}
+                             for v, af, pm, pb, c, im, php in rows],
                 'provenance': self._prov()}
 
     def breed_summary(self, breed):
@@ -281,10 +281,6 @@ class SniffQuery:
         if bc not in self.breed_set:
             return {'error': 'BREED_NOT_IN_ATLAS', 'breed': breed}
         q = '"' + bc + '"'
-        top = self.duck.execute(
-            f"SELECT b.variant_id, b.{q} af, m.gene_name, m.consequence, m.esm_llr "
-            f"FROM read_parquet('{BREEDAF}') b JOIN m USING(variant_id) "
-            f"WHERE m.esm_llr<=-5 AND b.{q}>=0.05 ORDER BY b.{q} DESC LIMIT 20", []).fetchall()
         bd = self.bdim.get(bc, {})
         return {'breed': bc, 'n_dogs': bd.get('n_dogs'), 'confidence': self._grade(bd.get('n_dogs')),
                 'breed_group': bd.get('breed_group'),
@@ -296,9 +292,6 @@ class SniffQuery:
                              'nearest_wild_canid': bd.get('breed_age_proxy_nearest_wild'),
                              'lifespan_residual_years': bd.get('lifespan_residual_years'),
                              'nearest_breeds': bd.get('nearest_5_breeds')},
-                'top_damaging_common_variants': [{'variant_id': v, 'af': round(af, 4), 'gene': g,
-                                                  'consequence': c, 'esm2_llr': e} for v, af, g, c, e in top],
-                'note': 'Descriptive (damaging = ESM2<=-5 & breed AF>=5%); not a health ranking. Disease layer v1.1.',
                 'provenance': self._prov(breed=bc)}
 
     # ---- companion (placeholder name) — per-dog intelligence substrate -------
@@ -539,7 +532,8 @@ class SniffQuery:
     def variant_search(self, esm_max=None, phylop_min=None, popmax_min=None, gene_in=None,
                        consequence=None, impact=None, limit=50):
         w, p = [], []
-        if esm_max is not None: w.append('esm_llr<=?'); p.append(esm_max)
+        if esm_max is not None:
+            return {'error': 'PREDICATE_RETIRED', 'note': 'This predicate is retired: Sniff does not score variants with a model of its own. Filter by impact, consequence, popmax_min, phylop_min or gene_in.'}
         if phylop_min is not None: w.append('phyloP_241way>=?'); p.append(phylop_min)
         if popmax_min is not None: w.append('popmax_af>=?'); p.append(popmax_min)
         if consequence: w.append('consequence=?'); p.append(consequence)
@@ -550,10 +544,10 @@ class SniffQuery:
         where = ' AND '.join(w)
         total = self.duck.execute(f"SELECT count(*) FROM m WHERE {where}", p).fetchone()[0]
         rows = self.duck.execute(
-            f"SELECT variant_id, gene_name, alt_af, popmax_af, popmax_breed, consequence, impact, esm_llr, phyloP_241way "
-            f"FROM m WHERE {where} ORDER BY esm_llr ASC NULLS LAST LIMIT ?", p + [min(limit, 200)]).fetchall()
+            f"SELECT variant_id, gene_name, alt_af, popmax_af, popmax_breed, consequence, impact, phyloP_241way "
+            f"FROM m WHERE {where} ORDER BY popmax_af DESC NULLS LAST LIMIT ?", p + [min(limit, 200)]).fetchall()
         return {'total_count': total, 'returned': len(rows),
                 'variants': [{'variant_id': v, 'gene': g, 'global_af': af, 'popmax_af': pm, 'popmax_breed': pb,
-                              'consequence': c, 'impact': im, 'esm2_llr': e, 'phylop_241way': php}
-                             for v, g, af, pm, pb, c, im, e, php in rows],
+                              'consequence': c, 'impact': im, 'phylop_241way': php}
+                             for v, g, af, pm, pb, c, im, php in rows],
                 'provenance': self._prov()}
