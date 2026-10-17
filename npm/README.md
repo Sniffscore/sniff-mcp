@@ -1,6 +1,6 @@
 # sniff-mcp
 
-**Agent-callable canine genomics.** Zero-setup launcher for the hosted [Sniff Atlas](https://sniff.world) MCP server — breed-stratified allele frequencies for 9,667,790 variants across 188 dog breeds, calibrated AI pathogenicity, and a variant/gene/breed/disease knowledge graph. Open, no API key.
+**Agent-callable canine genomics.** Zero-setup launcher for the hosted [Sniff Atlas](https://sniff.world) MCP server — breed-stratified allele frequencies for 9,667,790 variants genome-wide across 188 dog breeds, with annotations and a variant/gene/breed/disease knowledge graph. It assigns no pathogenicity to any variant. Open, no API key.
 
 ## Use it
 

@@ -12,11 +12,11 @@ from .query import SniffQuery
 
 DESCRIPTION = (
     "Open, agent-callable canine genomics over the **Sniff Atlas**: breed-stratified allele "
-    "frequencies for 9,667,790 variants across 188 dog breeds (CanFam4), calibrated ESM2 "
-    "pathogenicity (AUC 0.935 vs OMIA), Pangolin splice, Zoonomia phyloP, and a "
+    "frequencies for 9,667,790 variants across 188 dog breeds (CanFam4), with "
+    "Pangolin splice predictions (Zeng & Li 2022), Zoonomia phyloP conservation, and a "
     "variant/gene/breed/disease knowledge graph. No API key.\n\n"
     "**Identifiers:** positions are CanFam4 `chrom:pos` (e.g. `5:56189113`).\n"
-    "**Start with** `/v1/variant/{pos}/context` — the joined query (frequency + pathogenicity + "
+    "**Start with** `/v1/variant/{pos}/context` — the joined query (frequency + annotations + "
     "gene + cross-breed + provenance) in one call.\n"
     "**Rigor:** every response carries a `provenance` block with the dataset DOI, scope "
     "(MAF≥1%, imputed), and `predicted_disease_relevance: UNPROVEN`. Computational predictions, "
@@ -74,7 +74,7 @@ def root():
 LLMS_TXT_TEMPLATE = """# Sniff Atlas — canine genomics for agents
 
 > Open API + MCP server for dog DNA: breed-stratified allele frequencies for 9,667,790
-> variants across 188 dog breeds (CanFam4), calibrated AI pathogenicity, an OMIA clinical disease
+> variants across 188 dog breeds (CanFam4), an OMIA clinical disease
 > layer (inheritance, human OMIM/Mondo model-of homolog, AVCG grades), and a grounded cite-or-abstain
 > answer engine. No API key. Every response is self-citing.
 > Data release: {release}
@@ -95,7 +95,7 @@ LLMS_TXT_TEMPLATE = """# Sniff Atlas — canine genomics for agents
 - ask — natural-language question -> grounded, cited answer or honest abstain (surfaces the model-of bridge).
 
 ## Key endpoints
-- GET /v1/variant/{{pos}}/context  — START HERE: frequency + pathogenicity + gene + cross-breed + provenance in one call
+- GET /v1/variant/{{pos}}/context  — START HERE: frequency + annotations + gene + cross-breed + provenance in one call
 - GET /v1/variant/{{pos}}          — single variant
 - GET /v1/breed/{{breed}}          — breed profile (geometry, top variants, nearest breeds)
 - GET /v1/gene/{{symbol}}          — variants in a gene, ranked by impact
@@ -110,7 +110,7 @@ curl https://api.sniff.world/v1/variant/5:56189113   ->  CPT2 missense, popmax 0
 
 ## Rigor (quote this)
 {banner}
-Pathogenicity is computational (predicted_disease_relevance=UNPROVEN) — a research/discovery resource, NOT a
+Sniff does not score variants with a model of its own. Splice and conservation annotations are research annotations (predicted_disease_relevance=UNPROVEN) — a research/discovery resource, NOT a
 clinical diagnostic. Breed stats carry n_dogs + a Wilson CI + a confidence grade. The provenance block ships
 in every response.
 
@@ -138,13 +138,13 @@ def metadata():
 
 @app.get("/v1/variant/{position}", tags=["variants"], summary="Single variant by CanFam4 position")
 def variant_lookup(position: str):
-    """e.g. `/v1/variant/5:56189113` — ref/alt, global+popmax AF, consequence, gene, ESM2/Pangolin/phyloP."""
+    """e.g. `/v1/variant/5:56189113` — ref/alt, global+popmax AF, consequence, gene, Pangolin and phyloP annotations."""
     return Q.variant_lookup(position)
 
 @app.get("/v1/variant/{position}/context", tags=["variants"],
          summary="THE joined query — everything about a variant in one call")
 def ask_variant_context(position: str, breed: Optional[str] = None, top_n: int = 5, cross_breed_full: bool = False):
-    """Frequency + pathogenicity + gene + cross-breed + provenance. Pass `breed` for that breed's AF + rank."""
+    """Frequency + annotations + gene + cross-breed + provenance. Pass `breed` for that breed's AF + rank."""
     return Q.ask_variant_context(position, breed, top_n, cross_breed_full)
 
 @app.get("/v1/breed/{breed}/variant/{position}", tags=["breeds"], summary="One breed's frequency for one variant")
@@ -181,10 +181,10 @@ def semantic_search(q: str = Query(..., description='natural-language query, e.g
 def genes(limit: int = 50): return Q.genes_indexed(limit)
 
 @app.get("/v1/search", tags=["discovery"], summary="Filtered discovery across all 9.67M variants")
-def variant_search(esm_max: Optional[float] = None, phylop_min: Optional[float] = None,
+def variant_search(phylop_min: Optional[float] = None,
                    popmax_min: Optional[float] = None, gene_in: Optional[List[str]] = Query(None),
                    consequence: Optional[str] = None, impact: Optional[str] = None, limit: int = 50):
-    return Q.variant_search(esm_max, phylop_min, popmax_min, gene_in, consequence, impact, limit)
+    return Q.variant_search(None, phylop_min, popmax_min, gene_in, consequence, impact, limit)
 
 @app.get("/v1/diseases/search", tags=["diseases"], summary="Search the canine disease catalogue (ranked candidates)")
 def search_diseases(q: str = Query(..., description='disease free-text, e.g. "degenerative myelopathy"'), limit: int = 10):

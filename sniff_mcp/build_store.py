@@ -11,7 +11,9 @@ def main():
     breed_cols=[c for c in pq.read_schema(BREED).names if c!='variant_id']
     m=pq.read_table(MASTER,columns=['variant_id','chrom','ref','alt','alt_af','popmax_af','popmax_breed',
         'popmax_af_robust_n50','popmax_breed_robust_n50','n_breeds_observed','low_dr2_region','consequence',
-        'impact','gene_name','gene_id','is_lof','esm_llr','pangolin_max_score','phyloP_241way','deleteriousness_tier']).to_pandas()
+        'impact','gene_name','gene_id','is_lof','pangolin_max_score','phyloP_241way']).to_pandas()
+    # The release no longer carries a model pathogenicity score (from v1.0.2). The two store columns that
+    # held it stay in the schema for compatibility and are always empty.
     m['pos']=m.variant_id.str.split(':').str[1].astype('int64')
     if os.path.exists(OUT): os.remove(OUT)
     con=sqlite3.connect(OUT); con.execute('PRAGMA journal_mode=OFF'); con.execute('PRAGMA synchronous=OFF')
@@ -23,13 +25,14 @@ def main():
     con.executemany('INSERT INTO meta VALUES(?,?)',[('release',RELEASE),('assembly','canfam4'),
         ('n_variants',str(len(m))),('breed_order','\t'.join(breed_cols))])
     mv={c:m[c].values for c in m.columns}; pf=pq.ParquetFile(BREED); off=0
+    for c in ('esm_llr','deleteriousness_tier'): mv[c]=np.full(len(m),None,dtype=object)
     INS='INSERT INTO variants VALUES('+','.join('?'*22)+')'
     for b in pf.iter_batches(columns=breed_cols,batch_size=250_000):
         arr=np.column_stack([b.column(c).to_numpy(zero_copy_only=False) for c in breed_cols]).astype(np.float16)
         n=arr.shape[0]; sl=slice(off,off+n); rows=[]
         g=lambda k:mv[k][sl]
         for i in range(n):
-            f=lambda v: None if v!=v else float(v)
+            f=lambda v: None if v is None or v!=v else float(v)
             rows.append((g('variant_id')[i],g('chrom')[i],int(g('pos')[i]),g('ref')[i],g('alt')[i],
                 f(g('alt_af')[i]),f(g('popmax_af')[i]),(None if g('popmax_breed')[i] is None else str(g('popmax_breed')[i])),
                 f(g('popmax_af_robust_n50')[i]),(None if g('popmax_breed_robust_n50')[i] is None else str(g('popmax_breed_robust_n50')[i])),
