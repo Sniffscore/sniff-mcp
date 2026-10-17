@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-"""Sniff MCP — the OMIA clinical disease layer (MCP-T1: finish disease_links, v1.1).
+"""Sniff MCP: the OMIA clinical disease layer.
 
-Self-contained. Loads the four governed OMIA artifacts (built + shipped by the web lane, CC-BY,
-keyed by canonical OMIA id `OMIA:NNNNNN-TTTT`) and provides the clinical half the v1 server stubbed
-(`sniff_query.py:75  'diseases': []`). The molecular half (disease -> genes/variants/breeds) stays
-with the atlas KG on the VM; this module supplies inheritance, curated prose, clinical signs, the
-human (OMIM) analog, the evidence base (peer-reviewed references + the landmark study), and the
-Mondo disease id — each cited to OMIA, each with a canonical sniff.world deep link.
+Self-contained. Loads the OMIA-derived disease artifacts (CC-BY, keyed by canonical OMIA id
+`OMIA:NNNNNN-TTTT`) and provides, for each dog disease: inheritance, curated summary, clinical
+signs, the human (OMIM) analog, the evidence base (peer-reviewed references) and the Mondo id,
+each cited to OMIA and each with a canonical sniff.world link.
 
-Authored web-side under Matt's direction while the A100 research box is dark (the same pattern as
-the Glama audit-response). It ports the web resolver `web/src/lib/disease-resolve.ts` VERBATIM in
-behavior, INCLUDING the INV-38 constraint gate (SPECIES / breadth / uniqueness) — so the VM server
-resolves diseases identically to Ask + the web MCP. ONE resolver semantics across all three surfaces.
+Disease names resolve the same way here as on sniff.world: a query resolves only to a dog
+disease, only when it is specific enough, and only when it is unambiguous; otherwise the
+resolver abstains rather than guessing.
 
-Wiring: see OMIA_INTEGRATION_SPEC.md (drop this file + ./data/*.json into /home/ubuntu/sniff-mcp/,
-import in the FastMCP server, fill disease_links + ask_variant_context.diseases[], add disease_lookup).
+Data location: set SNIFF_OMIA_DIR, or SNIFF_DATA (the layer reads <SNIFF_DATA>/omia).
 """
 import json, os, re
 
@@ -93,7 +89,7 @@ class OmiaDiseaseLayer:
             for g in (v.get('genes') or []):
                 self.gene_to_diseases.setdefault(str(g).upper(), []).append(canon)
 
-    # ── resolution (the INV-38 constraint gate; ported from disease-resolve.ts) ──────────────────
+    # ── resolution: dog-only, specific enough, unambiguous, or abstain ──────────────────
     def resolve(self, query):
         """A disease name or OMIA id -> canonical id, or None. SPECIES-gated (dog-only)."""
         s = str(query or '').strip()
